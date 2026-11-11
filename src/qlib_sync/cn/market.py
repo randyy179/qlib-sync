@@ -70,7 +70,7 @@ def human_size(size: int) -> str:
 def release_status(timeout: int) -> dict[str, str | None]:
     request = urllib.request.Request(
         DEFAULT_RELEASE_API,
-        headers={"Accept": "application/vnd.github+json", "User-Agent": "qdata-cn-market-status"},
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "qlib-sync"},
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = json.load(response)

@@ -62,7 +62,7 @@ def qlib_calendar_smoke_test(data_dir: Path) -> None:
 
 def _download_once(url: str, target: Path, timeout: int) -> None:
     offset = target.stat().st_size if target.exists() else 0
-    request = urllib.request.Request(url, headers={"User-Agent": "qdata-cn-update"})
+    request = urllib.request.Request(url, headers={"User-Agent": "qlib-sync"})
     if offset and url.startswith(("http://", "https://")):
         request.add_header("Range", f"bytes={offset}-")
     else:

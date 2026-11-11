@@ -1,6 +1,6 @@
 import pytest
 
-from qdata import cli
+from qlib_sync import cli
 
 
 def test_dataset_overview_reports_latest_date_per_dataset(tmp_path):

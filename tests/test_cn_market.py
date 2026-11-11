@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from qdata.cn import market as collector
-from qdata.cn import update as cn_update
+from qlib_sync.cn import market as collector
+from qlib_sync.cn import update as cn_update
 
 
 def _write_dataset(path: Path, latest: str) -> None:
