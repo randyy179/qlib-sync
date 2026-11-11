@@ -414,3 +414,41 @@ def test_download_reports_progress_milestones_when_not_a_terminal(tmp_path, caps
     err = capsys.readouterr().err
     assert target.read_bytes() == source.read_bytes()
     assert "(25%)" in err and "(75%)" in err and "download finished" in err
+
+
+def test_install_records_the_release_checksum(tmp_path):
+    data_dir, options = _make_update(tmp_path, active=None)
+    _write_manifest(tmp_path, "2026-07-03")
+
+    cn_update.run_update(options, smoke_test=_no_smoke)
+
+    record = cn_update.read_install_record(data_dir)
+    assert record["trade_date"] == "2026-07-03"
+    assert record["archive_sha256"] == hashlib.sha256((tmp_path / "qlib_bin.tar.gz").read_bytes()).hexdigest()
+
+
+def test_republished_release_for_the_same_date_replaces_local_data(tmp_path):
+    data_dir, options = _make_update(tmp_path, active=None)
+    _write_manifest(tmp_path, "2026-07-03")
+    cn_update.run_update(options, smoke_test=_no_smoke)
+
+    # Upstream fixes the data and republishes the same trade date.
+    staged = tmp_path / "release" / "cn_data"
+    (staged / "features" / "sh600000" / "close.day.bin").write_bytes(b"fixed")
+    with tarfile.open(tmp_path / "qlib_bin.tar.gz", "w:gz") as tar:
+        tar.add(staged, arcname="release/cn_data")
+    _write_manifest(tmp_path, "2026-07-03")
+
+    result = cn_update.run_update(options, smoke_test=_no_smoke)
+
+    assert result.status == "republished"
+    assert (data_dir / "features" / "sh600000" / "close.day.bin").read_bytes() == b"fixed"
+    assert cn_update.run_update(options, smoke_test=_no_smoke).status == "up_to_date"
+
+
+def test_same_date_without_an_install_record_is_treated_as_current(tmp_path):
+    # Data installed by other means has no record, so a checksum cannot be compared.
+    data_dir, options = _make_update(tmp_path, active="2026-07-03", package="2026-07-03")
+    _write_manifest(tmp_path, "2026-07-03")
+
+    assert cn_update.run_update(options, smoke_test=_no_smoke).status == "up_to_date"

@@ -27,6 +27,7 @@ DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 CHUNK_SIZE = 1 << 20
 USER_AGENT = "qlib-sync"
 MIRROR_ENV = "QLIB_SYNC_MIRROR"
+INSTALL_RECORD = ".qlib-sync.json"
 
 
 class UpdateError(RuntimeError):
@@ -62,7 +63,7 @@ class UpdateOptions:
 class UpdateResult:
     """What an update did, for people (`summary_lines`) and for programs (`asdict`)."""
 
-    status: str  # "installed", "updated", or "up_to_date"
+    status: str  # "installed", "updated", "republished", or "up_to_date"
     latest_date: str
     previous_date: str | None = None
     new_trading_days: list[str] = field(default_factory=list)
@@ -75,6 +76,8 @@ class UpdateResult:
             return [f"Already up to date: data ends at {self.latest_date}."]
         if self.status == "installed":
             return [f"Installed CN data through {self.latest_date}."]
+        if self.status == "republished":
+            return [f"Replaced CN data through {self.latest_date} with a corrected upstream release."]
         days = self.new_trading_days
         span = f"{days[0]} to {days[-1]}" if len(days) > 1 else (days[0] if days else "none")
         lines = [
@@ -116,6 +119,35 @@ def read_last_line(path: Path) -> str:
 
 def lock_dir_for(data_dir: Path) -> Path:
     return data_dir.parent / ".cn_data_update.lock"
+
+
+def read_install_record(data_dir: Path) -> dict:
+    """The release this dataset was installed from, written by qlib-sync; {} if unknown."""
+    try:
+        return json.loads((data_dir / INSTALL_RECORD).read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def write_install_record(data_dir: Path, trade_date: str, manifest: Manifest | None) -> None:
+    record = {
+        "trade_date": trade_date,
+        "archive_sha256": manifest.sha256 if manifest else None,
+        "installed_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    (data_dir / INSTALL_RECORD).write_text(json.dumps(record, indent=2) + "\n")
+
+
+def is_republished(manifest: Manifest, old_latest: str, record: dict) -> bool:
+    """Upstream sometimes republishes the same trade date after fixing data; detect it by checksum."""
+    installed = record.get("archive_sha256")
+    return bool(
+        manifest.trade_date == old_latest
+        and manifest.sha256
+        and installed
+        and record.get("trade_date") == old_latest
+        and installed != manifest.sha256
+    )
 
 
 def resolve_mirror(mirror: str | None) -> str | None:
@@ -446,9 +478,13 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
             log(f"no existing CN data at {data_dir}; installing from the community release")
 
         manifest = fetch_manifest(options.source_url, options.timeout, mirror)
+        republished = False
         if manifest:
             log(f"release manifest: trade_date={manifest.trade_date}")
-            if old_latest and manifest.trade_date <= old_latest and not options.force:
+            republished = bool(old_latest) and is_republished(manifest, old_latest, read_install_record(data_dir))
+            if republished:
+                log(f"the {old_latest} release was republished upstream (new checksum); replacing local data")
+            elif old_latest and manifest.trade_date <= old_latest and not options.force:
                 log(f"already up to date; local data ends at {old_latest}, release ends at {manifest.trade_date}")
                 return UpdateResult(status="up_to_date", latest_date=old_latest, previous_date=old_latest)
 
@@ -469,7 +505,7 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
             raise UpdateError(f"package calendar ends at {new_latest}, but the manifest says {manifest.trade_date}")
         if old_latest and new_latest < old_latest:
             raise UpdateError(f"refusing downgrade: package ends at {new_latest}, active data ends at {old_latest}")
-        if old_latest and new_latest == old_latest and not options.force:
+        if old_latest and new_latest == old_latest and not (options.force or republished):
             log(f"package ends at {new_latest}, same as active data; no replacement needed")
             clear_download_cache(download_file)
             return UpdateResult(status="up_to_date", latest_date=old_latest, previous_date=old_latest)
@@ -477,9 +513,12 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
 
         if old_latest:
             result = describe_change(data_dir, old_latest, stage_dir, new_latest)
+            if republished:
+                result.status = "republished"
         else:
             result = UpdateResult(status="installed", latest_date=new_latest)
         apply_protected_instruments(options, stage_dir)
+        write_install_record(stage_dir, new_latest, manifest)
 
         log("switching data directories and running a Qlib read smoke test")
         try:
