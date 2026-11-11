@@ -1,3 +1,5 @@
+import hashlib
+import json
 import tarfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -93,7 +95,8 @@ def test_restore_works_without_an_active_dataset(tmp_path):
 def _make_update(tmp_path, active="2026-07-02", package="2026-07-03", **overrides):
     data_dir = tmp_path / "cn_data"
     staged = tmp_path / "release" / "cn_data"
-    _write_dataset(data_dir, active)
+    if active is not None:
+        _write_dataset(data_dir, active)
     _write_dataset(staged, package)
     archive = tmp_path / "qlib_bin.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
@@ -106,6 +109,16 @@ def _make_update(tmp_path, active="2026-07-02", package="2026-07-03", **override
         **overrides,
     )
     return data_dir, options
+
+
+def _write_manifest(tmp_path: Path, trade_date: str, sha256: str | None = None, size: int | None = None) -> None:
+    archive = tmp_path / "qlib_bin.tar.gz"
+    payload = {
+        "target_trade_date": trade_date,
+        "archive_sha256": f"sha256:{sha256 or hashlib.sha256(archive.read_bytes()).hexdigest()}",
+        "archive_size_bytes": archive.stat().st_size if size is None else size,
+    }
+    (tmp_path / cn_update.MANIFEST_NAME).write_text(json.dumps(payload))
 
 
 def _no_smoke(_data_dir: Path) -> None:
@@ -203,7 +216,7 @@ def test_update_rolls_back_when_smoke_test_fails(tmp_path, capsys):
         cn_update.run_update(options, smoke_test=failing_smoke)
 
     assert collector.read_latest_date(data_dir) == "2026-07-02"
-    assert "restoring the previous data directory" in capsys.readouterr().out
+    assert "previous data directory was restored" in capsys.readouterr().out
     assert _leftovers(tmp_path) == []
 
 
@@ -222,5 +235,102 @@ def test_update_rolls_back_when_stage_move_fails(tmp_path, monkeypatch, capsys):
         cn_update.run_update(options, smoke_test=_no_smoke)
 
     assert collector.read_latest_date(data_dir) == "2026-07-02"
-    assert "restoring the previous data directory" in capsys.readouterr().out
+    assert "previous data directory was restored" in capsys.readouterr().out
     assert _leftovers(tmp_path) == []
+
+
+def test_manifest_says_up_to_date_so_nothing_is_downloaded(tmp_path):
+    data_dir, options = _make_update(tmp_path, active="2026-07-03", package="2026-07-03")
+    _write_manifest(tmp_path, "2026-07-03")
+    (tmp_path / "qlib_bin.tar.gz").unlink()
+
+    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert not (tmp_path / "downloads" / cn_update.DOWNLOAD_NAME).exists()
+
+
+def test_manifest_checksum_is_verified_before_extracting(tmp_path):
+    data_dir, options = _make_update(tmp_path)
+    _write_manifest(tmp_path, "2026-07-03")
+
+    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert collector.read_latest_date(data_dir) == "2026-07-03"
+    assert not list((tmp_path / "downloads").iterdir())
+
+
+def test_checksum_mismatch_discards_download_and_keeps_data(tmp_path):
+    data_dir, options = _make_update(tmp_path)
+    _write_manifest(tmp_path, "2026-07-03", sha256="0" * 64)
+
+    with pytest.raises(cn_update.UpdateError, match="sha256 does not match"):
+        cn_update.run_update(options, smoke_test=_no_smoke)
+
+    assert collector.read_latest_date(data_dir) == "2026-07-02"
+    assert not list((tmp_path / "downloads").iterdir())
+    assert _leftovers(tmp_path) == []
+
+
+def test_package_date_must_match_manifest(tmp_path):
+    data_dir, options = _make_update(tmp_path)
+    _write_manifest(tmp_path, "2026-07-04")
+
+    with pytest.raises(cn_update.UpdateError, match="manifest says 2026-07-04"):
+        cn_update.run_update(options, smoke_test=_no_smoke)
+
+    assert collector.read_latest_date(data_dir) == "2026-07-02"
+
+
+def test_stale_partial_download_from_another_package_is_discarded(tmp_path):
+    _, options = _make_update(tmp_path)
+    _write_manifest(tmp_path, "2026-07-03")
+    cache = tmp_path / "downloads"
+    cache.mkdir()
+    (cache / cn_update.DOWNLOAD_NAME).write_bytes(b"partial bytes from an older release")
+    (cache / f"{cn_update.DOWNLOAD_NAME}.sha256").write_text("f" * 64)
+
+    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+
+
+def test_malformed_manifest_falls_back_to_validating_the_package(tmp_path, capsys):
+    data_dir, options = _make_update(tmp_path)
+    (tmp_path / cn_update.MANIFEST_NAME).write_text(json.dumps({"release_tag": "2026-07-03"}))
+
+    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert "release manifest unavailable" in capsys.readouterr().out
+
+
+def test_first_install_into_an_empty_location(tmp_path):
+    data_dir, options = _make_update(tmp_path, active=None)
+    _write_manifest(tmp_path, "2026-07-03")
+
+    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert collector.read_latest_date(data_dir) == "2026-07-03"
+    assert _leftovers(tmp_path) == []
+
+
+def test_first_install_creates_missing_parent_directories(tmp_path):
+    _, options = _make_update(tmp_path, active=None)
+    options.data_dir = tmp_path / "fresh" / "qlib_data" / "cn_data"
+
+    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert collector.read_latest_date(options.data_dir) == "2026-07-03"
+
+
+def test_refuses_to_overwrite_a_non_dataset_directory(tmp_path):
+    data_dir, options = _make_update(tmp_path, active=None)
+    data_dir.mkdir()
+    (data_dir / "notes.txt").write_text("not qlib data")
+
+    with pytest.raises(cn_update.UpdateError, match="not a Qlib daily dataset"):
+        cn_update.run_update(options, smoke_test=_no_smoke)
+
+    assert (data_dir / "notes.txt").exists()
+
+
+def test_status_reports_update_available_from_manifest(tmp_path):
+    data_dir, options = _make_update(tmp_path)
+    _write_manifest(tmp_path, "2026-07-03")
+
+    result = collector.collect_status(data_dir, tmp_path / "protected", False, 5, source_url=options.source_url)
+
+    assert result["remote_release"]["trade_date"] == "2026-07-03"
+    assert result["update_available"] is True

@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime as dt
 import json
 import sys
-import urllib.error
-import urllib.request
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
-from .update import BACKUP_PREFIX, UpdateError, UpdateOptions, run_update as run_package_update
+from ..txn import exclusive_lock, replace_directory
+from .update import (
+    BACKUP_PREFIX,
+    DEFAULT_SOURCE_URL,
+    UpdateError,
+    UpdateOptions,
+    fetch_manifest,
+    lock_dir_for,
+    run_update as run_package_update,
+)
 
 DEFAULT_DATA_DIR = Path("~/.qlib/qlib_data/cn_data").expanduser()
 DEFAULT_PROTECTED_DIR = Path("~/.qlib/qlib_data/custom_instruments/cn_data").expanduser()
-DEFAULT_RELEASE_API = "https://api.github.com/repos/chenditc/investment_data/releases/latest"
 DEFAULT_PROTECTED_FILES: tuple[str, ...] = ()
 
 
@@ -67,20 +72,6 @@ def human_size(size: int) -> str:
     raise AssertionError("unreachable")
 
 
-def release_status(timeout: int) -> dict[str, str | None]:
-    request = urllib.request.Request(
-        DEFAULT_RELEASE_API,
-        headers={"Accept": "application/vnd.github+json", "User-Agent": "qlib-sync"},
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = json.load(response)
-    return {
-        "tag": payload.get("tag_name"),
-        "published_at": payload.get("published_at"),
-        "url": payload.get("html_url"),
-    }
-
-
 def related_dataset_status(data_dir: Path) -> list[dict[str, str | None]]:
     output = []
     for name in ("cn_etf_data", "cn_etf_data_hfq"):
@@ -90,7 +81,9 @@ def related_dataset_status(data_dir: Path) -> list[dict[str, str | None]]:
     return output
 
 
-def collect_status(data_dir: Path, protected_dir: Path, offline: bool, timeout: int) -> dict:
+def collect_status(
+    data_dir: Path, protected_dir: Path, offline: bool, timeout: int, source_url: str = DEFAULT_SOURCE_URL
+) -> dict:
     backups = list_backups(data_dir)
     protected_files = sorted(path.name for path in protected_dir.glob("*.txt")) if protected_dir.is_dir() else []
     result = {
@@ -103,13 +96,14 @@ def collect_status(data_dir: Path, protected_dir: Path, offline: bool, timeout: 
         "backups": [str(path) for path in backups],
         "related_datasets": related_dataset_status(data_dir),
         "remote_release": None,
-        "remote_error": None,
+        "update_available": None,
     }
     if not offline:
-        try:
-            result["remote_release"] = release_status(timeout)
-        except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
-            result["remote_error"] = str(exc)
+        manifest = fetch_manifest(source_url, timeout)
+        if manifest:
+            result["remote_release"] = dataclasses.asdict(manifest)
+            local = result["local_latest_date"]
+            result["update_available"] = local is None or manifest.trade_date > local
     return result
 
 
@@ -119,10 +113,9 @@ def print_status(result: dict) -> None:
     print(f"Data size: {human_size(result['size_bytes'])}")
     remote = result.get("remote_release")
     if remote:
-        print(f"Community release: {remote['tag']} (published {remote['published_at']})")
-        print("Package content date is verified only after download; the release tag is not a trading-data guarantee.")
-    elif result.get("remote_error"):
-        print(f"Community release: unavailable ({result['remote_error']})")
+        size = f", {human_size(remote['size'])}" if remote.get("size") else ""
+        state = "update available" if result["update_available"] else "up to date"
+        print(f"Community release: trade date {remote['trade_date']}{size} ({state})")
     print("Instrument pools:")
     for pool in result["instrument_pools"]:
         print(f"  {pool['name']}: records={pool['records']} unique_symbols={pool['unique_symbols']}")
@@ -142,6 +135,7 @@ def run_update(args: argparse.Namespace) -> None:
         refresh_protected=args.refresh_protected,
         keep_backup=args.keep_backup,
         force=args.force,
+        source_url=args.source_url,
     )
     log(f"start update: data_dir={args.data_dir} protected={','.join(protected) or 'none'}")
     try:
@@ -254,19 +248,6 @@ def run_health_check(args: argparse.Namespace) -> int:
     return 0
 
 
-@contextmanager
-def update_lock(data_dir: Path) -> Iterator[None]:
-    lock_dir = data_dir.parent / ".cn_data_update.lock"
-    try:
-        lock_dir.mkdir()
-    except FileExistsError as exc:
-        raise RuntimeError(f"another CN data operation is already running: {lock_dir}") from exc
-    try:
-        yield
-    finally:
-        lock_dir.rmdir()
-
-
 def resolve_backup(data_dir: Path, value: Path | None) -> Path:
     if value is not None:
         backup = value.expanduser().resolve()
@@ -296,19 +277,9 @@ def run_restore(args: argparse.Namespace) -> None:
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     displaced = args.data_dir.parent / f"cn_data_before_restore_{stamp}"
     log(f"start restore: backup={backup} active={args.data_dir}")
-    with update_lock(args.data_dir):
-        if args.data_dir.exists():
-            args.data_dir.rename(displaced)
-            try:
-                backup.rename(args.data_dir)
-            except Exception:
-                displaced.rename(args.data_dir)
-                raise
-            displaced_message = str(displaced)
-        else:
-            backup.rename(args.data_dir)
-            displaced_message = "none"
-    log(f"end restore: latest_date={read_latest_date(args.data_dir)} displaced_data={displaced_message}")
+    with exclusive_lock(lock_dir_for(args.data_dir)):
+        previous = replace_directory(args.data_dir, backup, displaced)
+    log(f"end restore: latest_date={read_latest_date(args.data_dir)} displaced_data={previous or 'none'}")
 
 
 def add_data_args(parser: argparse.ArgumentParser) -> None:
@@ -321,11 +292,13 @@ def add_subcommands(parser: argparse.ArgumentParser) -> None:
 
     status_parser = subparsers.add_parser("status", help="Show local data, pools, backups, and remote release metadata")
     add_data_args(status_parser)
-    status_parser.add_argument("--offline", action="store_true", help="Do not query the GitHub release API")
+    status_parser.add_argument("--offline", action="store_true", help="Do not read the remote release manifest")
     status_parser.add_argument("--timeout", type=int, default=15)
     status_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
 
-    update_parser = subparsers.add_parser("update", help="Safely replace CN data with the latest community package")
+    update_parser = subparsers.add_parser(
+        "update", help="Install, or safely replace CN data with, the latest community package"
+    )
     add_data_args(update_parser)
     update_parser.add_argument(
         "--protect", action="append", help="Protected instrument filename; repeat for multiple files"
@@ -333,6 +306,7 @@ def add_subcommands(parser: argparse.ArgumentParser) -> None:
     update_parser.add_argument("--refresh-protected", action="store_true")
     update_parser.add_argument("--keep-backup", action="store_true", help="Keep one rollback backup after a successful update")
     update_parser.add_argument("--force", action="store_true", help="Replace even when package and local dates match")
+    update_parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL, help="Community package URL")
 
     health_parser = subparsers.add_parser("health-check", help="Validate structure, protected pools, and Qlib reads")
     add_data_args(health_parser)
