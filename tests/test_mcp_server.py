@@ -5,11 +5,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-pytest.importorskip("mcp")
+from mcp import Client
 
-from mcp import Client  # noqa: E402
-
-from qlib_sync.mcp_server import create_server, normalize_symbol  # noqa: E402
+from qlib_sync import mcp_server
+from qlib_sync.mcp_server import create_server, normalize_symbol
 
 DAYS = ["2026-07-01", "2026-07-02", "2026-07-03"]
 BARS = {
@@ -133,3 +132,13 @@ def test_update_installs_then_prices_are_readable(tmp_path):
 )
 def test_normalize_symbol(raw, expected):
     assert normalize_symbol(raw) == expected
+
+
+def test_empty_data_dir_variable_means_the_default(monkeypatch):
+    monkeypatch.setenv(mcp_server.DATA_DIR_ENV, "")
+    seen = {}
+    monkeypatch.setattr(mcp_server, "QlibReader", lambda path: seen.setdefault("dir", path))
+
+    create_server()
+
+    assert seen["dir"] == mcp_server.market.DEFAULT_DATA_DIR.resolve()

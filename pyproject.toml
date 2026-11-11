@@ -7,7 +7,7 @@ name = "qlib-sync"
 version = "0.1.0"
 description = "Safely install and update a local Qlib China A-share dataset, with an MCP server for AI assistants."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 license = { text = "MIT" }
 authors = [{ name = "randyy179" }]
 keywords = ["qlib", "quant", "a-share", "china", "stock", "market-data", "mcp"]
@@ -24,11 +24,11 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Office/Business :: Financial :: Investment",
 ]
-dependencies = ["pyqlib>=0.9.6"]
+# pyqlib publishes wheels for CPython 3.12 at most, hence the upper bound above.
+dependencies = ["pyqlib>=0.9.6", "mcp>=2.3,<3"]
 
 [project.optional-dependencies]
-mcp = ["mcp>=2.3,<3"]
-dev = ["pytest", "mcp>=2.3,<3"]
+dev = ["pytest"]
 
 [project.urls]
 Homepage = "https://github.com/randyy179/qlib-sync"
@@ -50,6 +50,8 @@ include = [
     "src",
     "tests",
     "skills",
+    "mcpb",
+    "server.json",
     "docs/scheduling.md",
     "README.md",
     "README.zh-CN.md",

@@ -6,12 +6,16 @@
 
 [中文说明](README.zh-CN.md)
 
+<!-- mcp-name: io.github.randyy179/qlib-sync -->
+
 **One command to install and keep current a local [Qlib](https://github.com/microsoft/qlib) China A-share dataset, and an MCP server so AI assistants can read it.**
 
 ```bash
 pip install qlib-sync
 qlib-sync cn update
 ```
+
+Or without installing anything first: `uvx qlib-sync cn update`.
 
 That installs the daily community release from
 [chenditc/investment_data](https://github.com/chenditc/investment_data) into
@@ -88,16 +92,28 @@ print(result.new_trading_days, result.added_symbols)
 
 ## Use it from Claude and other AI assistants
 
+The MCP server runs locally: your assistant starts it on demand and it reads the dataset on
+your machine. There is no service to host and nothing leaves your computer.
+
+**Claude Desktop:** download `qlib-sync.mcpb` from the
+[latest release](https://github.com/randyy179/qlib-sync/releases/latest) and open it. Claude
+installs Python and the dependencies itself.
+
+**Claude Code:**
+
 ```bash
-pip install "qlib-sync[mcp]"
-claude mcp add qlib-sync -- qlib-sync mcp        # Claude Code
+claude mcp add qlib-sync -- uvx qlib-sync mcp
 ```
 
-For Claude Desktop and other MCP clients, run `qlib-sync mcp` as a stdio server:
+**Other MCP clients:** run `uvx qlib-sync mcp` as a stdio server. It is also listed in the
+[MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.randyy179/qlib-sync`.
 
 ```json
-{ "mcpServers": { "qlib-sync": { "command": "qlib-sync", "args": ["mcp"] } } }
+{ "mcpServers": { "qlib-sync": { "command": "uvx", "args": ["qlib-sync", "mcp"] } } }
 ```
+
+Set `QLIB_SYNC_DATA_DIR` to use a dataset outside `~/.qlib/qlib_data/cn_data`, and
+`QLIB_SYNC_MIRROR` to download through a mirror.
 
 | Tool | Does |
 |---|---|
@@ -127,7 +143,8 @@ data. Prices follow Qlib's convention: `$close` is adjusted and the real price i
 
 qlib-sync is an independent project, not affiliated with Microsoft or the Qlib team.
 
-Supported: macOS and Linux, Python 3.10 to 3.12.
+Supported: macOS and Linux, Python 3.10 to 3.12 (pyqlib does not publish wheels for newer
+versions yet; `uvx` picks a compatible Python automatically).
 
 ## Development
 

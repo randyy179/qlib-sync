@@ -1,0 +1,33 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.randyy179/qlib-sync",
+  "title": "qlib-sync: China A-share data",
+  "description": "Install, update, and read a local Qlib China A-share daily dataset, with checksums and rollback.",
+  "repository": {
+    "url": "https://github.com/randyy179/qlib-sync",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "qlib-sync",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "packageArguments": [{ "type": "positional", "value": "mcp" }],
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "QLIB_SYNC_DATA_DIR",
+          "description": "Dataset folder; defaults to ~/.qlib/qlib_data/cn_data",
+          "isRequired": false
+        },
+        {
+          "name": "QLIB_SYNC_MIRROR",
+          "description": "Optional prefix-style GitHub proxy for slow connections, e.g. https://ghfast.top",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

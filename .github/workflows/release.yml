@@ -33,3 +33,19 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  bundle:
+    # The Claude Desktop bundle installs qlib-sync from PyPI, so attach it after publishing.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npx -y @anthropic-ai/mcpb pack mcpb qlib-sync.mcpb
+      - run: gh release create "$GITHUB_REF_NAME" qlib-sync.mcpb --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

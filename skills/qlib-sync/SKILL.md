@@ -14,8 +14,8 @@ so running an update is always safe.
 ## Pick the interface
 
 - **MCP tools available** (`cn_status`, `cn_update`, `cn_get_prices`, ...): use them directly.
-- **Otherwise** use the CLI. If `qlib-sync` is not installed, suggest `pip install qlib-sync`
-  (add `[mcp]` for the MCP server) and confirm before installing anything.
+- **Otherwise** use the CLI. If `qlib-sync` is not installed, `uvx qlib-sync ...` runs it
+  without installing; `pip install qlib-sync` installs it. Confirm before installing anything.
 
 ## Update the data
 

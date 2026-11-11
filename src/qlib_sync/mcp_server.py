@@ -1,6 +1,6 @@
 """MCP server: let AI assistants check, update, and read the local A-share dataset.
 
-Run with `qlib-sync mcp` (stdio). Requires the optional extra: pip install "qlib-sync[mcp]".
+Run with `qlib-sync mcp` (stdio), or without installing: `uvx qlib-sync mcp`.
 """
 
 from __future__ import annotations
@@ -13,13 +13,10 @@ import threading
 from pathlib import Path
 from typing import Any, Literal
 
-try:
-    import anyio
-    from mcp.server.mcpserver import MCPServer
-    from mcp.server.mcpserver.exceptions import ToolError
-    from mcp.types import ToolAnnotations
-except ImportError as exc:  # pragma: no cover - exercised only without the extra
-    raise SystemExit('The MCP server needs the optional dependency: pip install "qlib-sync[mcp]"') from exc
+import anyio
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from .cn import market
 from .cn.update import DEFAULT_SOURCE_URL, UpdateError, UpdateOptions, run_update
@@ -112,7 +109,8 @@ class QlibReader:
 
 
 def create_server(data_dir: Path | None = None, source_url: str = DEFAULT_SOURCE_URL) -> MCPServer:
-    data_dir = (data_dir or Path(os.environ.get(DATA_DIR_ENV, market.DEFAULT_DATA_DIR))).expanduser().resolve()
+    # An empty variable (an unset option in an MCP client's config) means the default.
+    data_dir = (data_dir or Path(os.environ.get(DATA_DIR_ENV) or market.DEFAULT_DATA_DIR)).expanduser().resolve()
     reader = QlibReader(data_dir)
     server = MCPServer("qlib-sync", instructions=INSTRUCTIONS)
 

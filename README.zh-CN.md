@@ -9,6 +9,8 @@ pip install qlib-sync
 qlib-sync cn update
 ```
 
+也可以不预先安装，直接运行：`uvx qlib-sync cn update`。
+
 数据来自 [chenditc/investment_data](https://github.com/chenditc/investment_data) 每天的社区发布，安装到 Qlib 默认读取的位置 `~/.qlib/qlib_data/cn_data`。原来的 Qlib 代码不用改。之后随时再运行同一条命令，数据已是最新时大约 1 秒结束。
 
 ## 为什么不直接 `wget` 加 `tar`？
@@ -75,16 +77,23 @@ print(result.new_trading_days, result.added_symbols)
 
 ## 在 Claude 等 AI 助手中使用
 
+MCP server 在你本机运行：AI 助手需要时自动启动它，它读取你电脑上的数据。不需要搭建任何服务器，数据也不会离开你的电脑。
+
+**Claude Desktop**：从 [最新发布](https://github.com/randyy179/qlib-sync/releases/latest) 下载 `qlib-sync.mcpb`，双击打开即可。Python 和依赖由 Claude 自动安装。
+
+**Claude Code**：
+
 ```bash
-pip install "qlib-sync[mcp]"
-claude mcp add qlib-sync -- qlib-sync mcp        # Claude Code
+claude mcp add qlib-sync -- uvx qlib-sync mcp
 ```
 
-Claude Desktop 和其他 MCP 客户端，把 `qlib-sync mcp` 配置为 stdio server 即可：
+**其他 MCP 客户端**：把 `uvx qlib-sync mcp` 配置为 stdio server。也可以在 [MCP Registry](https://registry.modelcontextprotocol.io) 搜索 `io.github.randyy179/qlib-sync`。
 
 ```json
-{ "mcpServers": { "qlib-sync": { "command": "qlib-sync", "args": ["mcp"] } } }
+{ "mcpServers": { "qlib-sync": { "command": "uvx", "args": ["qlib-sync", "mcp"] } } }
 ```
+
+数据不在默认位置时设置环境变量 `QLIB_SYNC_DATA_DIR`；需要走镜像时设置 `QLIB_SYNC_MIRROR`。
 
 | 工具 | 作用 |
 |---|---|
@@ -108,7 +117,7 @@ Claude Desktop 和其他 MCP 客户端，把 `qlib-sync mcp` 配置为 stdio ser
 
 qlib-sync 是独立项目，与微软及 Qlib 团队无关。
 
-支持 macOS 和 Linux，Python 3.10 到 3.12。
+支持 macOS 和 Linux，Python 3.10 到 3.12（pyqlib 暂未发布更新版本的安装包；用 `uvx` 时会自动选择兼容的 Python）。
 
 ## 开发
 

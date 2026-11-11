@@ -1,0 +1,60 @@
+{
+  "manifest_version": "0.4",
+  "name": "qlib-sync",
+  "display_name": "qlib-sync: China A-share data",
+  "version": "0.1.0",
+  "description": "Install, update, and read a local Qlib China A-share daily dataset.",
+  "long_description": "Keeps ~/.qlib/qlib_data/cn_data current with the daily community release from chenditc/investment_data, with checksum verification and automatic rollback, and lets Claude read daily prices and index constituents from it. The first update downloads about 550 MB.",
+  "author": {
+    "name": "randyy179",
+    "url": "https://github.com/randyy179"
+  },
+  "homepage": "https://github.com/randyy179/qlib-sync",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/randyy179/qlib-sync"
+  },
+  "license": "MIT",
+  "keywords": ["qlib", "a-share", "china", "stocks", "market-data", "quant"],
+  "server": {
+    "type": "uv",
+    "entry_point": "src/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "src/server.py"],
+      "env": {
+        "QLIB_SYNC_DATA_DIR": "${user_config.data_dir}",
+        "QLIB_SYNC_MIRROR": "${user_config.mirror}"
+      }
+    }
+  },
+  "user_config": {
+    "data_dir": {
+      "type": "directory",
+      "title": "Data folder",
+      "description": "Where the A-share dataset lives. Qlib reads ~/.qlib/qlib_data/cn_data by default.",
+      "required": false,
+      "default": "${HOME}/.qlib/qlib_data/cn_data"
+    },
+    "mirror": {
+      "type": "string",
+      "title": "Download mirror (optional)",
+      "description": "Prefix-style GitHub proxy for slow connections, e.g. https://ghfast.top. Leave empty to download from GitHub.",
+      "required": false,
+      "default": ""
+    }
+  },
+  "tools": [
+    {"name": "cn_status", "description": "Local latest date, pools, and whether an update is available"},
+    {"name": "cn_update", "description": "Install or update the dataset; restores the previous data on failure"},
+    {"name": "cn_health_check", "description": "Structure checks plus a real Qlib read"},
+    {"name": "cn_get_prices", "description": "Daily bars for up to 20 symbols, real or adjusted prices"},
+    {"name": "cn_list_pool", "description": "Members of csi300, csi500, and other pools on a date"}
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "linux"],
+    "runtimes": {
+      "python": ">=3.10,<3.13"
+    }
+  }
+}
