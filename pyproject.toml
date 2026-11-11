@@ -5,15 +5,35 @@ build-backend = "hatchling.build"
 [project]
 name = "qlib-sync"
 version = "0.1.0"
-description = "Operate local Qlib market datasets: transactional updates, health checks, and corporate-action audits."
+description = "Safely install and update a local Qlib China A-share dataset, with an MCP server for AI assistants."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+authors = [{ name = "randyy179" }]
+keywords = ["qlib", "quant", "a-share", "china", "stock", "market-data", "mcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
 dependencies = ["pyqlib>=0.9.6"]
 
 [project.optional-dependencies]
 mcp = ["mcp>=2.3,<3"]
 dev = ["pytest", "mcp>=2.3,<3"]
+
+[project.urls]
+Homepage = "https://github.com/randyy179/qlib-sync"
+Issues = "https://github.com/randyy179/qlib-sync/issues"
+Changelog = "https://github.com/randyy179/qlib-sync/releases"
 
 [project.scripts]
 qlib-sync = "qlib_sync.cli:main"
@@ -23,3 +43,16 @@ packages = ["src/qlib_sync"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.hatch.build.targets.sdist]
+# An allowlist, so local notes and scratch files never ship by accident.
+include = [
+    "src",
+    "tests",
+    "skills",
+    "docs/scheduling.md",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "pyproject.toml",
+]
