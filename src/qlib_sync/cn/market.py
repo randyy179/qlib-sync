@@ -13,10 +13,12 @@ from ..txn import exclusive_lock, replace_directory
 from .update import (
     BACKUP_PREFIX,
     DEFAULT_SOURCE_URL,
+    MIRROR_ENV,
     UpdateError,
     UpdateOptions,
     fetch_manifest,
     lock_dir_for,
+    resolve_mirror,
     run_update as run_package_update,
 )
 
@@ -26,7 +28,7 @@ DEFAULT_PROTECTED_FILES: tuple[str, ...] = ()
 
 
 def log(message: str) -> None:
-    print(f"[INFO] {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {message}")
+    print(f"[INFO] {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {message}", file=sys.stderr, flush=True)
 
 
 def read_calendar(calendar_path: Path) -> list[str]:
@@ -82,7 +84,12 @@ def related_dataset_status(data_dir: Path) -> list[dict[str, str | None]]:
 
 
 def collect_status(
-    data_dir: Path, protected_dir: Path, offline: bool, timeout: int, source_url: str = DEFAULT_SOURCE_URL
+    data_dir: Path,
+    protected_dir: Path,
+    offline: bool,
+    timeout: int,
+    source_url: str = DEFAULT_SOURCE_URL,
+    mirror: str | None = None,
 ) -> dict:
     backups = list_backups(data_dir)
     protected_files = sorted(path.name for path in protected_dir.glob("*.txt")) if protected_dir.is_dir() else []
@@ -99,7 +106,7 @@ def collect_status(
         "update_available": None,
     }
     if not offline:
-        manifest = fetch_manifest(source_url, timeout)
+        manifest = fetch_manifest(source_url, timeout, resolve_mirror(mirror))
         if manifest:
             result["remote_release"] = dataclasses.asdict(manifest)
             local = result["local_latest_date"]
@@ -136,14 +143,18 @@ def run_update(args: argparse.Namespace) -> None:
         keep_backup=args.keep_backup,
         force=args.force,
         source_url=args.source_url,
+        mirror=args.mirror,
     )
     log(f"start update: data_dir={args.data_dir} protected={','.join(protected) or 'none'}")
     try:
-        latest = run_package_update(options)
+        result = run_package_update(options)
     except UpdateError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    log(f"end update: latest_date={latest}")
+    if args.json:
+        print(json.dumps(dataclasses.asdict(result), indent=2))
+    else:
+        print("\n".join(result.summary_lines()))
 
 
 def check_structure(data_dir: Path) -> tuple[list[str], list[str]]:
@@ -227,16 +238,22 @@ def qlib_smoke_test(data_dir: Path) -> tuple[list[str], list[str]]:
     return errors, notes
 
 
-def run_health_check(args: argparse.Namespace) -> int:
-    log(f"start health-check: data_dir={args.data_dir}")
-    errors, notes = check_structure(args.data_dir)
-    protected_errors, protected_notes = check_protected(args.data_dir, args.protected_dir)
+def health_check(data_dir: Path, protected_dir: Path, skip_qlib: bool = False) -> dict:
+    errors, notes = check_structure(data_dir)
+    protected_errors, protected_notes = check_protected(data_dir, protected_dir)
     errors.extend(protected_errors)
     notes.extend(protected_notes)
-    if not args.skip_qlib and not errors:
-        qlib_errors, qlib_notes = qlib_smoke_test(args.data_dir)
+    if not skip_qlib and not errors:
+        qlib_errors, qlib_notes = qlib_smoke_test(data_dir)
         errors.extend(qlib_errors)
         notes.extend(qlib_notes)
+    return {"ok": not errors, "errors": errors, "checks": notes}
+
+
+def run_health_check(args: argparse.Namespace) -> int:
+    log(f"start health-check: data_dir={args.data_dir}")
+    report = health_check(args.data_dir, args.protected_dir, args.skip_qlib)
+    errors, notes = report["errors"], report["checks"]
     for note in notes:
         print(f"[OK] {note}")
     for error in errors:
@@ -287,6 +304,13 @@ def add_data_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--protected-dir", type=Path, default=DEFAULT_PROTECTED_DIR)
 
 
+def add_mirror_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--mirror",
+        help=f"Prefix-style GitHub proxy, e.g. https://ghfast.top (default: ${MIRROR_ENV})",
+    )
+
+
 def add_subcommands(parser: argparse.ArgumentParser) -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -295,6 +319,7 @@ def add_subcommands(parser: argparse.ArgumentParser) -> None:
     status_parser.add_argument("--offline", action="store_true", help="Do not read the remote release manifest")
     status_parser.add_argument("--timeout", type=int, default=15)
     status_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+    add_mirror_arg(status_parser)
 
     update_parser = subparsers.add_parser(
         "update", help="Install, or safely replace CN data with, the latest community package"
@@ -307,6 +332,8 @@ def add_subcommands(parser: argparse.ArgumentParser) -> None:
     update_parser.add_argument("--keep-backup", action="store_true", help="Keep one rollback backup after a successful update")
     update_parser.add_argument("--force", action="store_true", help="Replace even when package and local dates match")
     update_parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL, help="Community package URL")
+    update_parser.add_argument("--json", action="store_true", help="Print the update result as JSON")
+    add_mirror_arg(update_parser)
 
     health_parser = subparsers.add_parser("health-check", help="Validate structure, protected pools, and Qlib reads")
     add_data_args(health_parser)
@@ -330,7 +357,7 @@ def run(args: argparse.Namespace) -> None:
     args.data_dir = args.data_dir.expanduser().resolve()
     args.protected_dir = args.protected_dir.expanduser().resolve()
     if args.command == "status":
-        result = collect_status(args.data_dir, args.protected_dir, args.offline, args.timeout)
+        result = collect_status(args.data_dir, args.protected_dir, args.offline, args.timeout, mirror=args.mirror)
         if args.json:
             print(json.dumps(result, indent=2, ensure_ascii=True))
         else:

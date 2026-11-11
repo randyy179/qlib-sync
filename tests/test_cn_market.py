@@ -133,7 +133,7 @@ def _leftovers(tmp_path: Path) -> list[str]:
 def test_update_replaces_data_and_removes_previous_directory(tmp_path):
     data_dir, options = _make_update(tmp_path)
 
-    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert cn_update.run_update(options, smoke_test=_no_smoke).latest_date == "2026-07-03"
 
     assert collector.read_latest_date(data_dir) == "2026-07-03"
     assert _leftovers(tmp_path) == []
@@ -157,7 +157,7 @@ def test_update_is_a_noop_when_dates_match_unless_forced(tmp_path):
     marker = data_dir / "marker"
     marker.write_text("active")
 
-    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert cn_update.run_update(options, smoke_test=_no_smoke).latest_date == "2026-07-03"
     assert marker.exists()
 
     options.force = True
@@ -216,7 +216,7 @@ def test_update_rolls_back_when_smoke_test_fails(tmp_path, capsys):
         cn_update.run_update(options, smoke_test=failing_smoke)
 
     assert collector.read_latest_date(data_dir) == "2026-07-02"
-    assert "previous data directory was restored" in capsys.readouterr().out
+    assert "previous data directory was restored" in capsys.readouterr().err
     assert _leftovers(tmp_path) == []
 
 
@@ -235,7 +235,7 @@ def test_update_rolls_back_when_stage_move_fails(tmp_path, monkeypatch, capsys):
         cn_update.run_update(options, smoke_test=_no_smoke)
 
     assert collector.read_latest_date(data_dir) == "2026-07-02"
-    assert "previous data directory was restored" in capsys.readouterr().out
+    assert "previous data directory was restored" in capsys.readouterr().err
     assert _leftovers(tmp_path) == []
 
 
@@ -244,7 +244,7 @@ def test_manifest_says_up_to_date_so_nothing_is_downloaded(tmp_path):
     _write_manifest(tmp_path, "2026-07-03")
     (tmp_path / "qlib_bin.tar.gz").unlink()
 
-    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert cn_update.run_update(options, smoke_test=_no_smoke).latest_date == "2026-07-03"
     assert not (tmp_path / "downloads" / cn_update.DOWNLOAD_NAME).exists()
 
 
@@ -252,7 +252,7 @@ def test_manifest_checksum_is_verified_before_extracting(tmp_path):
     data_dir, options = _make_update(tmp_path)
     _write_manifest(tmp_path, "2026-07-03")
 
-    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert cn_update.run_update(options, smoke_test=_no_smoke).latest_date == "2026-07-03"
     assert collector.read_latest_date(data_dir) == "2026-07-03"
     assert not list((tmp_path / "downloads").iterdir())
 
@@ -287,22 +287,22 @@ def test_stale_partial_download_from_another_package_is_discarded(tmp_path):
     (cache / cn_update.DOWNLOAD_NAME).write_bytes(b"partial bytes from an older release")
     (cache / f"{cn_update.DOWNLOAD_NAME}.sha256").write_text("f" * 64)
 
-    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert cn_update.run_update(options, smoke_test=_no_smoke).latest_date == "2026-07-03"
 
 
 def test_malformed_manifest_falls_back_to_validating_the_package(tmp_path, capsys):
     data_dir, options = _make_update(tmp_path)
     (tmp_path / cn_update.MANIFEST_NAME).write_text(json.dumps({"release_tag": "2026-07-03"}))
 
-    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
-    assert "release manifest unavailable" in capsys.readouterr().out
+    assert cn_update.run_update(options, smoke_test=_no_smoke).latest_date == "2026-07-03"
+    assert "release manifest unavailable" in capsys.readouterr().err
 
 
 def test_first_install_into_an_empty_location(tmp_path):
     data_dir, options = _make_update(tmp_path, active=None)
     _write_manifest(tmp_path, "2026-07-03")
 
-    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert cn_update.run_update(options, smoke_test=_no_smoke).latest_date == "2026-07-03"
     assert collector.read_latest_date(data_dir) == "2026-07-03"
     assert _leftovers(tmp_path) == []
 
@@ -311,7 +311,7 @@ def test_first_install_creates_missing_parent_directories(tmp_path):
     _, options = _make_update(tmp_path, active=None)
     options.data_dir = tmp_path / "fresh" / "qlib_data" / "cn_data"
 
-    assert cn_update.run_update(options, smoke_test=_no_smoke) == "2026-07-03"
+    assert cn_update.run_update(options, smoke_test=_no_smoke).latest_date == "2026-07-03"
     assert collector.read_latest_date(options.data_dir) == "2026-07-03"
 
 
@@ -334,3 +334,83 @@ def test_status_reports_update_available_from_manifest(tmp_path):
 
     assert result["remote_release"]["trade_date"] == "2026-07-03"
     assert result["update_available"] is True
+
+
+def _write_pool(data_dir: Path, rows: list[tuple[str, str, str]]) -> None:
+    (data_dir / "instruments" / "all.txt").write_text("".join(f"{s}\t{a}\t{b}\n" for s, a, b in rows))
+
+
+def test_update_result_describes_new_days_and_symbol_changes(tmp_path):
+    data_dir, options = _make_update(tmp_path, package="2026-07-06")
+    (data_dir / "calendars" / "day.txt").write_text("2026-07-01\n2026-07-02\n")
+    _write_pool(data_dir, [("SH600000", "2020-01-01", "2026-07-02"), ("SZ000002", "2020-01-01", "2026-07-02")])
+    staged = tmp_path / "release" / "cn_data"
+    (staged / "calendars" / "day.txt").write_text("2026-07-01\n2026-07-02\n2026-07-03\n2026-07-06\n")
+    _write_pool(
+        staged,
+        [
+            ("SH600000", "2020-01-01", "2026-07-06"),
+            ("SZ000002", "2020-01-01", "2026-07-03"),
+            ("SH688999", "2026-07-03", "2026-07-06"),
+        ],
+    )
+    with tarfile.open(tmp_path / "qlib_bin.tar.gz", "w:gz") as tar:
+        tar.add(staged, arcname="release/cn_data")
+
+    result = cn_update.run_update(options, smoke_test=_no_smoke)
+
+    assert result.status == "updated"
+    assert result.previous_date == "2026-07-02"
+    assert result.new_trading_days == ["2026-07-03", "2026-07-06"]
+    assert result.added_symbols == ["SH688999"]
+    assert result.delisted_symbols == ["SZ000002"]
+    assert result.summary_lines()[1] == "New trading days: 2 (2026-07-03 to 2026-07-06)"
+
+
+def test_up_to_date_and_install_results(tmp_path):
+    data_dir, options = _make_update(tmp_path, active=None)
+    installed = cn_update.run_update(options, smoke_test=_no_smoke)
+    assert installed.status == "installed"
+
+    again = cn_update.run_update(options, smoke_test=_no_smoke)
+    assert again.status == "up_to_date"
+    assert again.summary_lines() == ["Already up to date: data ends at 2026-07-03."]
+
+
+def test_mirror_prefixes_the_package_url_and_env_var_is_honored(monkeypatch):
+    url = cn_update.DEFAULT_SOURCE_URL
+    assert cn_update.mirrored(url, cn_update.resolve_mirror("https://ghfast.top/")) == f"https://ghfast.top/{url}"
+    assert cn_update.resolve_mirror("") is None
+    monkeypatch.setenv(cn_update.MIRROR_ENV, "https://gh-proxy.com")
+    assert cn_update.resolve_mirror(None) == "https://gh-proxy.com"
+    assert cn_update.resolve_mirror("") is None
+
+
+def test_manifest_falls_back_to_mirror_when_direct_fails(tmp_path, monkeypatch, capsys):
+    calls = []
+
+    def fake_read(url, timeout):
+        calls.append(url)
+        if not url.startswith("https://mirror.example"):
+            raise OSError("connection reset")
+        return cn_update.Manifest(trade_date="2026-07-03")
+
+    monkeypatch.setattr(cn_update, "_read_manifest", fake_read)
+
+    manifest = cn_update.fetch_manifest(cn_update.DEFAULT_SOURCE_URL, mirror="https://mirror.example")
+
+    assert manifest.trade_date == "2026-07-03"
+    assert calls[0].startswith("https://github.com/") and calls[1].startswith("https://mirror.example/")
+    assert "read through the mirror" in capsys.readouterr().err
+
+
+def test_download_reports_progress_milestones_when_not_a_terminal(tmp_path, capsys):
+    source = tmp_path / "blob.bin"
+    source.write_bytes(b"x" * (cn_update.CHUNK_SIZE * 4))
+    target = tmp_path / "out.part"
+
+    cn_update._download_once(source.as_uri(), target, 5, expected_size=source.stat().st_size)
+
+    err = capsys.readouterr().err
+    assert target.read_bytes() == source.read_bytes()
+    assert "(25%)" in err and "(75%)" in err and "download finished" in err

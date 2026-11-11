@@ -5,8 +5,10 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import os
 import re
 import shutil
+import sys
 import tarfile
 import time
 import urllib.error
@@ -24,6 +26,7 @@ DOWNLOAD_NAME = "qlib_bin.tar.gz.part"
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 CHUNK_SIZE = 1 << 20
 USER_AGENT = "qlib-sync"
+MIRROR_ENV = "QLIB_SYNC_MIRROR"
 
 
 class UpdateError(RuntimeError):
@@ -44,6 +47,7 @@ class UpdateOptions:
     data_dir: Path
     protected_dir: Path
     source_url: str = DEFAULT_SOURCE_URL
+    mirror: str | None = None
     protected: list[str] = field(default_factory=list)
     refresh_protected: bool = False
     keep_backup: bool = False
@@ -54,12 +58,55 @@ class UpdateOptions:
     timeout: int = 60
 
 
+@dataclass
+class UpdateResult:
+    """What an update did, for people (`summary_lines`) and for programs (`asdict`)."""
+
+    status: str  # "installed", "updated", or "up_to_date"
+    latest_date: str
+    previous_date: str | None = None
+    new_trading_days: list[str] = field(default_factory=list)
+    added_symbols: list[str] = field(default_factory=list)
+    delisted_symbols: list[str] = field(default_factory=list)
+    backup: str | None = None
+
+    def summary_lines(self) -> list[str]:
+        if self.status == "up_to_date":
+            return [f"Already up to date: data ends at {self.latest_date}."]
+        if self.status == "installed":
+            return [f"Installed CN data through {self.latest_date}."]
+        days = self.new_trading_days
+        span = f"{days[0]} to {days[-1]}" if len(days) > 1 else (days[0] if days else "none")
+        lines = [
+            f"Updated CN data from {self.previous_date} to {self.latest_date}.",
+            f"New trading days: {len(days)} ({span})",
+            f"New symbols: {len(self.added_symbols)}{_preview(self.added_symbols)}",
+            f"Delisted symbols: {len(self.delisted_symbols)}{_preview(self.delisted_symbols)}",
+        ]
+        if self.backup:
+            lines.append(f"Rollback backup kept at {self.backup}")
+        return lines
+
+
+def _preview(symbols: list[str], limit: int = 8) -> str:
+    if not symbols:
+        return ""
+    more = f", +{len(symbols) - limit} more" if len(symbols) > limit else ""
+    return f" ({', '.join(symbols[:limit])}{more})"
+
+
+def _stamp() -> str:
+    return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# Progress and diagnostics go to stderr so stdout stays clean for JSON output and
+# for the MCP stdio transport.
 def log(message: str) -> None:
-    print(f"[INFO] {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {message}", flush=True)
+    print(f"[INFO] {_stamp()} {message}", file=sys.stderr, flush=True)
 
 
 def warn(message: str) -> None:
-    print(f"[WARN] {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {message}", flush=True)
+    print(f"[WARN] {_stamp()} {message}", file=sys.stderr, flush=True)
 
 
 def read_last_line(path: Path) -> str:
@@ -69,6 +116,16 @@ def read_last_line(path: Path) -> str:
 
 def lock_dir_for(data_dir: Path) -> Path:
     return data_dir.parent / ".cn_data_update.lock"
+
+
+def resolve_mirror(mirror: str | None) -> str | None:
+    value = mirror if mirror is not None else os.environ.get(MIRROR_ENV, "")
+    return value.strip().rstrip("/") or None
+
+
+def mirrored(url: str, mirror: str | None) -> str:
+    """Route a URL through a prefix-style GitHub proxy, e.g. https://ghfast.top/<url>."""
+    return f"{mirror}/{url}" if mirror else url
 
 
 def manifest_url(source_url: str) -> str:
@@ -88,21 +145,37 @@ def parse_manifest(payload: dict) -> Manifest:
     return Manifest(trade_date=trade_date, sha256=digest, size=int(size) if size is not None else None)
 
 
-def fetch_manifest(source_url: str, timeout: int = 15) -> Manifest | None:
+def _read_manifest(url: str, timeout: int) -> Manifest:
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return parse_manifest(json.load(response))
+
+
+def fetch_manifest(source_url: str, timeout: int = 15, mirror: str | None = None) -> Manifest | None:
     """Return the release manifest, or None (with a warning) when it cannot be used.
 
-    The manifest is an optimization and an integrity check, not a requirement: when it
-    is missing or its format changes, the update falls back to validating the package
-    itself after download.
+    The manifest is read from the source directly when possible, so its checksum stays
+    independent of any mirror that serves the package. It is an optimization and an
+    integrity check, not a requirement: when it is missing or its format changes, the
+    update falls back to validating the package itself after download.
     """
     url = manifest_url(source_url)
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    errors = (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return parse_manifest(json.load(response))
-    except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
-        warn(f"release manifest unavailable ({exc}); the package will be validated after download")
+        return _read_manifest(url, min(timeout, 10) if mirror else timeout)
+    except errors as exc:
+        if not mirror:
+            warn(f"release manifest unavailable ({exc}); the package will be validated after download")
+            return None
+        direct_error = exc
+    try:
+        manifest = _read_manifest(mirrored(url, mirror), timeout)
+    except errors as exc:
+        warn(f"release manifest unavailable directly ({direct_error}) or via the mirror ({exc}); "
+             "the package will be validated after download")
         return None
+    warn("release manifest was read through the mirror; its checksum is only as trustworthy as the mirror")
+    return manifest
 
 
 def qlib_calendar_smoke_test(data_dir: Path) -> None:
@@ -117,7 +190,53 @@ def qlib_calendar_smoke_test(data_dir: Path) -> None:
         raise RuntimeError("Qlib calendar is empty")
 
 
-def _download_once(url: str, target: Path, timeout: int) -> None:
+class _Progress:
+    """Report download progress: a live line on a terminal, quarter milestones otherwise."""
+
+    def __init__(self, total: int | None, done: int):
+        self.total = total
+        self.done = done
+        self.start_done = done
+        self.started = time.monotonic()
+        self.last_draw = 0.0
+        self.next_milestone = 25
+        self.live = sys.stderr.isatty()
+
+    def advance(self, size: int) -> None:
+        self.done += size
+        now = time.monotonic()
+        if self.live and now - self.last_draw >= 0.25:
+            self.last_draw = now
+            sys.stderr.write(f"\r  {self._line(now)}   ")
+            sys.stderr.flush()
+        elif not self.live and self.total:
+            percent = self.done * 100 // self.total
+            if percent >= self.next_milestone and self.next_milestone < 100:
+                log(f"downloaded {self._line(now)}")
+                self.next_milestone = (percent // 25 + 1) * 25
+
+    def finish(self) -> None:
+        now = time.monotonic()
+        if self.live:
+            sys.stderr.write(f"\r  {self._line(now)}   \n")
+            sys.stderr.flush()
+        log(f"download finished: {_mib(self.done)} in {now - self.started:.0f}s")
+
+    def _line(self, now: float) -> str:
+        elapsed = max(now - self.started, 1e-6)
+        speed = (self.done - self.start_done) / elapsed
+        if not self.total:
+            return f"{_mib(self.done)} at {_mib(speed)}/s"
+        percent = self.done * 100 / self.total
+        eta = (self.total - self.done) / speed if speed > 0 else 0
+        return f"{_mib(self.done)} / {_mib(self.total)} ({percent:.0f}%) at {_mib(speed)}/s, {eta:.0f}s left"
+
+
+def _mib(size: float) -> str:
+    return f"{size / (1 << 20):.1f} MiB"
+
+
+def _download_once(url: str, target: Path, timeout: int, expected_size: int | None) -> None:
     offset = target.stat().st_size if target.exists() else 0
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     if offset and url.startswith(("http://", "https://")):
@@ -130,12 +249,19 @@ def _download_once(url: str, target: Path, timeout: int) -> None:
         if exc.code == 416 and offset:
             # The cached part no longer matches the remote package; start over.
             target.unlink()
-            return _download_once(url, target, timeout)
+            return _download_once(url, target, timeout, expected_size)
         raise
     with response:
-        resumed = offset and getattr(response, "status", None) == 206
+        resumed = bool(offset) and getattr(response, "status", None) == 206
+        length = response.headers.get("Content-Length")
+        start = offset if resumed else 0
+        total = expected_size or (start + int(length) if length and length.isdigit() else None)
+        progress = _Progress(total, start)
         with target.open("ab" if resumed else "wb") as handle:
-            shutil.copyfileobj(response, handle, CHUNK_SIZE)
+            for chunk in iter(lambda: response.read(CHUNK_SIZE), b""):
+                handle.write(chunk)
+                progress.advance(len(chunk))
+        progress.finish()
 
 
 def prepare_download_cache(target: Path, manifest: Manifest | None) -> None:
@@ -162,17 +288,21 @@ def download_package(options: UpdateOptions, target: Path, manifest: Manifest | 
         return
     if target.exists():
         log(f"resuming incomplete package download: {target}")
+    url = mirrored(options.source_url, resolve_mirror(options.mirror))
+    if url != options.source_url:
+        log(f"downloading through mirror: {url}")
     last_error: Exception | None = None
     for attempt in range(1, options.retries + 1):
         try:
-            _download_once(options.source_url, target, options.timeout)
+            _download_once(url, target, options.timeout, manifest.size if manifest else None)
             return
         except (OSError, urllib.error.URLError) as exc:
             last_error = exc
-            log(f"download attempt {attempt}/{options.retries} failed: {exc}")
+            warn(f"download attempt {attempt}/{options.retries} failed: {exc}")
             if attempt < options.retries:
                 time.sleep(options.retry_delay)
-    raise UpdateError(f"could not download the community package: {last_error}")
+    hint = "" if resolve_mirror(options.mirror) else f"; behind a slow connection to GitHub, try --mirror or {MIRROR_ENV}"
+    raise UpdateError(f"could not download the community package: {last_error}{hint}")
 
 
 def verify_package(target: Path, manifest: Manifest | None) -> None:
@@ -220,6 +350,40 @@ def extract_package(archive: Path, extract_dir: Path) -> Path:
     return stage_dir
 
 
+def read_listing_ends(data_dir: Path) -> dict[str, str]:
+    """Map each symbol in `instruments/all.txt` to the last date it is listed."""
+    path = data_dir / "instruments" / "all.txt"
+    if not path.is_file():
+        return {}
+    ends: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            ends[parts[0]] = max(ends.get(parts[0], ""), parts[2])
+    return ends
+
+
+def describe_change(old_dir: Path, old_latest: str, stage_dir: Path, new_latest: str) -> UpdateResult:
+    """Compare the active dataset with the staged one before they are swapped."""
+    calendar = [line.strip() for line in (stage_dir / "calendars" / "day.txt").read_text().splitlines()]
+    new_days = [day for day in calendar if day and day > old_latest]
+    old_ends = read_listing_ends(old_dir)
+    new_ends = read_listing_ends(stage_dir)
+    added = sorted(set(new_ends) - set(old_ends))
+    # Listed through the old latest date, but no longer listed through the new one.
+    delisted = sorted(
+        symbol for symbol, end in new_ends.items() if old_ends.get(symbol, "") >= old_latest and end < new_latest
+    )
+    return UpdateResult(
+        status="updated",
+        latest_date=new_latest,
+        previous_date=old_latest,
+        new_trading_days=new_days,
+        added_symbols=added,
+        delisted_symbols=delisted,
+    )
+
+
 def apply_protected_instruments(options: UpdateOptions, stage_dir: Path) -> None:
     for instrument in options.protected:
         if "/" in instrument or instrument.startswith("."):
@@ -244,8 +408,10 @@ def remove_backups(base_dir: Path, keep: Path | None, label: str) -> None:
             shutil.rmtree(backup)
 
 
-def run_update(options: UpdateOptions, smoke_test: Callable[[Path], None] = qlib_calendar_smoke_test) -> str:
-    """Install or update the dataset and return the resulting latest trading date.
+def run_update(
+    options: UpdateOptions, smoke_test: Callable[[Path], None] = qlib_calendar_smoke_test
+) -> UpdateResult:
+    """Install or update the dataset and describe what changed.
 
     The release manifest is read first so an up-to-date dataset costs one small request.
     The package is verified and validated in a staging directory, then swapped in with
@@ -259,13 +425,14 @@ def run_update(options: UpdateOptions, smoke_test: Callable[[Path], None] = qlib
         raise UpdateError(str(exc)) from exc
 
 
-def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None]) -> str:
+def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None]) -> UpdateResult:
     data_dir = options.data_dir
     base_dir = data_dir.parent
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     work_dir = base_dir / f".cn_data_update_{stamp}"
     backup_dir = base_dir / f"{BACKUP_PREFIX}{stamp}"
     download_file = (options.download_cache_dir or base_dir / "downloads") / DOWNLOAD_NAME
+    mirror = resolve_mirror(options.mirror)
 
     try:
         calendar = data_dir / "calendars" / "day.txt"
@@ -278,12 +445,12 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
             old_latest = None
             log(f"no existing CN data at {data_dir}; installing from the community release")
 
-        manifest = fetch_manifest(options.source_url, options.timeout)
+        manifest = fetch_manifest(options.source_url, options.timeout, mirror)
         if manifest:
             log(f"release manifest: trade_date={manifest.trade_date}")
             if old_latest and manifest.trade_date <= old_latest and not options.force:
                 log(f"already up to date; local data ends at {old_latest}, release ends at {manifest.trade_date}")
-                return old_latest
+                return UpdateResult(status="up_to_date", latest_date=old_latest, previous_date=old_latest)
 
         log("downloading community package")
         download_file.parent.mkdir(parents=True, exist_ok=True)
@@ -305,9 +472,13 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
         if old_latest and new_latest == old_latest and not options.force:
             log(f"package ends at {new_latest}, same as active data; no replacement needed")
             clear_download_cache(download_file)
-            return old_latest
+            return UpdateResult(status="up_to_date", latest_date=old_latest, previous_date=old_latest)
         log(f"validated package; active_latest={old_latest or 'none'} package_latest={new_latest}")
 
+        if old_latest:
+            result = describe_change(data_dir, old_latest, stage_dir, new_latest)
+        else:
+            result = UpdateResult(status="installed", latest_date=new_latest)
         apply_protected_instruments(options, stage_dir)
 
         log("switching data directories and running a Qlib read smoke test")
@@ -321,6 +492,7 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
             log(f"install complete; latest_date={new_latest}")
         elif options.keep_backup:
             remove_backups(base_dir, keep=previous, label="superseded")
+            result.backup = str(previous)
             log(f"update complete; latest_date={new_latest} rollback_backup={previous}")
         else:
             log(f"removing validated previous data directory: {previous}")
@@ -328,6 +500,6 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
             remove_backups(base_dir, keep=None, label="legacy")
             log(f"update complete; latest_date={new_latest} rollback_backup=none")
         clear_download_cache(download_file)
-        return new_latest
+        return result
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
