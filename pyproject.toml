@@ -12,7 +12,8 @@ license = { text = "MIT" }
 dependencies = ["pyqlib>=0.9.6"]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+mcp = ["mcp>=2.3,<3"]
+dev = ["pytest", "mcp>=2.3,<3"]
 
 [project.scripts]
 qlib-sync = "qlib_sync.cli:main"

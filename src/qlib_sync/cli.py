@@ -13,6 +13,7 @@ USAGE = """usage: qlib-sync <command> [options]
 commands:
   status              Latest date and size of every local dataset
   cn <subcommand>     China A-share daily data: status, update, health-check, restore
+  mcp                 Serve the A-share data to AI assistants over MCP (stdio)
 
 Run `qlib-sync cn --help` for details.
 """
@@ -65,6 +66,10 @@ def main(argv: list[str] | None = None) -> None:
         print_overview()
     elif command == "cn":
         run_module_main("qlib_sync.cn.market", "qlib-sync cn", rest)
+    elif command == "mcp":
+        from .mcp_server import main as mcp_main  # pylint: disable=import-outside-toplevel
+
+        mcp_main(rest)
     else:
         print(USAGE, file=sys.stderr)
         raise SystemExit(2)
