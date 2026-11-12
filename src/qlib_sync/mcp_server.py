@@ -1,6 +1,6 @@
 """MCP server: let AI assistants check, update, and read the local A-share dataset.
 
-Run with `qlib-sync mcp` (stdio), or without installing: `uvx qlib-sync mcp`.
+Run with `qlib-sync mcp` (stdio), or without installing: `uvx --python 3.12 qlib-sync mcp`.
 """
 
 from __future__ import annotations

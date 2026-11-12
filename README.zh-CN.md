@@ -11,7 +11,8 @@ pip install qlib-sync
 qlib-sync cn update
 ```
 
-也可以不预先安装，直接运行：`uvx qlib-sync cn update`。
+也可以不预先安装，直接运行：`uvx --python 3.12 qlib-sync cn update`。
+（加 `--python 3.12` 是因为 pyqlib 只提供到 Python 3.12 的安装包，需要时 uv 会自动下载这个版本的 Python。用 pip 安装时请使用 Python 3.10 到 3.12。）
 
 ![qlib-sync 更新数据：查看状态、带进度下载、校验、汇报变化，再运行一次瞬间完成](docs/assets/demo-update.gif)
 
@@ -99,17 +100,17 @@ MCP server 在你本机运行，读取你电脑上的数据，不需要搭建任
 | 工具 | 接入方式 |
 |---|---|
 | Claude Desktop | 从[最新发布](https://github.com/randyy179/qlib-sync/releases/latest)下载 `qlib-sync.mcpb`，双击安装 |
-| Claude Code | `claude mcp add qlib-sync -- uvx qlib-sync mcp` |
-| OpenAI Codex CLI | `codex mcp add qlib-sync -- uvx qlib-sync mcp` |
+| Claude Code | `claude mcp add qlib-sync -- uvx --python 3.12 qlib-sync mcp` |
+| OpenAI Codex CLI | `codex mcp add qlib-sync -- uvx --python 3.12 qlib-sync mcp` |
 | 腾讯 CodeBuddy、字节 Trae、阿里通义灵码 | 在 MCP 设置里手动添加服务器，粘贴下面的 JSON |
-| Cherry Studio | 设置 → MCP 服务器 → 添加：类型选 STDIO，命令填 `uvx`，参数分两行填 `qlib-sync` 和 `mcp` |
+| Cherry Studio | 设置 → MCP 服务器 → 添加：类型选 STDIO，命令填 `uvx`，参数分四行填 `--python`、`3.12`、`qlib-sync`、`mcp` |
 | 通义千问 Qwen Code | 把下面的 JSON 写进 `~/.qwen/settings.json` |
 | Cursor | 把下面的 JSON 写进 `~/.cursor/mcp.json` |
 | Gemini CLI | 把下面的 JSON 写进 `~/.gemini/settings.json` |
-| VS Code（Copilot Agent 模式） | `.vscode/mcp.json`：`{ "servers": { "qlib-sync": { "type": "stdio", "command": "uvx", "args": ["qlib-sync", "mcp"] } } }` |
+| VS Code（Copilot Agent 模式） | `.vscode/mcp.json`：`{ "servers": { "qlib-sync": { "type": "stdio", "command": "uvx", "args": ["--python", "3.12", "qlib-sync", "mcp"] } } }` |
 
 ```json
-{ "mcpServers": { "qlib-sync": { "command": "uvx", "args": ["qlib-sync", "mcp"] } } }
+{ "mcpServers": { "qlib-sync": { "command": "uvx", "args": ["--python", "3.12", "qlib-sync", "mcp"] } } }
 ```
 
 各工具的菜单名称和配置文件位置会随版本变化，找不到时以该工具的 MCP 官方文档为准。已实测：Claude Code、OpenAI Codex CLI。

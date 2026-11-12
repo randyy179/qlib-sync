@@ -17,7 +17,9 @@ pip install qlib-sync
 qlib-sync cn update
 ```
 
-Or without installing anything first: `uvx qlib-sync cn update`.
+Or without installing anything first: `uvx --python 3.12 qlib-sync cn update`.
+(`--python 3.12` because pyqlib publishes wheels up to Python 3.12; uv fetches that Python
+for you if needed. With pip, use Python 3.10 to 3.12.)
 
 ![qlib-sync updating the dataset: status, download with progress, checksum, summary, then an instant no-op](docs/assets/demo-update.gif)
 
@@ -121,17 +123,17 @@ Every client needs the same two things: the command `uvx` and the arguments `qli
 | Client | How to add qlib-sync |
 |---|---|
 | Claude Desktop | Download `qlib-sync.mcpb` from the [latest release](https://github.com/randyy179/qlib-sync/releases/latest) and open it |
-| Claude Code | `claude mcp add qlib-sync -- uvx qlib-sync mcp` |
-| OpenAI Codex CLI | `codex mcp add qlib-sync -- uvx qlib-sync mcp` |
+| Claude Code | `claude mcp add qlib-sync -- uvx --python 3.12 qlib-sync mcp` |
+| OpenAI Codex CLI | `codex mcp add qlib-sync -- uvx --python 3.12 qlib-sync mcp` |
 | Cursor | The JSON below, in `~/.cursor/mcp.json` |
 | Gemini CLI | The JSON below, in `~/.gemini/settings.json` |
 | Qwen Code | The JSON below, in `~/.qwen/settings.json` |
 | Tencent CodeBuddy, ByteDance Trae, Alibaba Tongyi Lingma | MCP settings, add a server manually, paste the JSON below |
-| Cherry Studio | Settings, MCP servers, add: type STDIO, command `uvx`, arguments `qlib-sync` and `mcp` on separate lines |
-| VS Code (Copilot agent mode) | `.vscode/mcp.json`: `{ "servers": { "qlib-sync": { "type": "stdio", "command": "uvx", "args": ["qlib-sync", "mcp"] } } }` |
+| Cherry Studio | Settings, MCP servers, add: type STDIO, command `uvx`, arguments `--python`, `3.12`, `qlib-sync`, `mcp` on separate lines |
+| VS Code (Copilot agent mode) | `.vscode/mcp.json`: `{ "servers": { "qlib-sync": { "type": "stdio", "command": "uvx", "args": ["--python", "3.12", "qlib-sync", "mcp"] } } }` |
 
 ```json
-{ "mcpServers": { "qlib-sync": { "command": "uvx", "args": ["qlib-sync", "mcp"] } } }
+{ "mcpServers": { "qlib-sync": { "command": "uvx", "args": ["--python", "3.12", "qlib-sync", "mcp"] } } }
 ```
 
 Menu names and file locations change between versions; check your client's MCP documentation

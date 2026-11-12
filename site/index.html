@@ -234,8 +234,8 @@ footer p { margin: 0 0 8px; max-width: 52em; }
         </p>
         <div class="command">
           <span class="prompt" aria-hidden="true">$</span>
-          <code id="cmd">uvx qlib-sync cn update</code>
-          <button class="copy" type="button" data-copy="uvx qlib-sync cn update">
+          <code id="cmd">uvx --python 3.12 qlib-sync cn update</code>
+          <button class="copy" type="button" data-copy="uvx --python 3.12 qlib-sync cn update">
             <span lang="zh-CN">复制</span><span lang="en">Copy</span>
           </button>
         </div>
@@ -357,8 +357,8 @@ footer p { margin: 0 0 8px; max-width: 52em; }
           </li>
           <li>
             <h3><span lang="zh-CN">命令行工具</span><span lang="en">Command-line agents</span></h3>
-            <pre class="snippet"><code>claude mcp add qlib-sync -- uvx qlib-sync mcp
-codex mcp add qlib-sync -- uvx qlib-sync mcp</code></pre>
+            <pre class="snippet"><code>claude mcp add qlib-sync -- uvx --python 3.12 qlib-sync mcp
+codex mcp add qlib-sync -- uvx --python 3.12 qlib-sync mcp</code></pre>
           </li>
           <li>
             <h3><span lang="zh-CN">CodeBuddy、Trae、通义灵码、Cursor 等</span><span lang="en">Cursor, CodeBuddy, Trae, Tongyi Lingma, and others</span></h3>
@@ -367,7 +367,7 @@ codex mcp add qlib-sync -- uvx qlib-sync mcp</code></pre>
               <span lang="en">Add a server in the MCP settings and paste:</span>
             </p>
             <pre class="snippet"><code>{ "mcpServers": { "qlib-sync":
-  { "command": "uvx", "args": ["qlib-sync", "mcp"] } } }</code></pre>
+  { "command": "uvx", "args": ["--python", "3.12", "qlib-sync", "mcp"] } } }</code></pre>
             <p class="more">
               <span lang="zh-CN">Cherry Studio、VS Code、Gemini CLI、Qwen Code 的写法见<a href="https://github.com/randyy179/qlib-sync/blob/main/README.zh-CN.md#在你的-ai-助手中使用">完整说明</a>。</span>
               <span lang="en">Cherry Studio, VS Code, Gemini CLI, and Qwen Code are covered in the <a href="https://github.com/randyy179/qlib-sync#use-it-from-your-ai-assistant">README</a>.</span>

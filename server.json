@@ -7,15 +7,22 @@
     "url": "https://github.com/randyy179/qlib-sync",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "qlib-sync",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "runtimeHint": "uvx",
-      "packageArguments": [{ "type": "positional", "value": "mcp" }],
-      "transport": { "type": "stdio" },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      },
       "environmentVariables": [
         {
           "name": "QLIB_SYNC_DATA_DIR",
@@ -26,6 +33,13 @@
           "name": "QLIB_SYNC_MIRROR",
           "description": "Optional prefix-style GitHub proxy for slow connections, e.g. https://ghfast.top",
           "isRequired": false
+        }
+      ],
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--python",
+          "value": "3.12"
         }
       ]
     }
