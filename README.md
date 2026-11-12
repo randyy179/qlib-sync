@@ -17,6 +17,8 @@ qlib-sync cn update
 
 Or without installing anything first: `uvx qlib-sync cn update`.
 
+![qlib-sync updating the dataset: status, download with progress, checksum, summary, then an instant no-op](docs/assets/demo-update.gif)
+
 That installs the daily community release from
 [chenditc/investment_data](https://github.com/chenditc/investment_data) into
 `~/.qlib/qlib_data/cn_data`, the location Qlib reads by default. Run the same command again
@@ -35,6 +37,11 @@ That works until it doesn't:
 - **Every check downloads 550 MB**, even when nothing changed.
 
 qlib-sync treats the dataset like a production system:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/update-flow-dark.svg">
+  <img alt="Update flow: check the manifest, download, verify, stage, swap; any failure puts the previous dataset back" src="docs/assets/update-flow-light.svg">
+</picture>
 
 | Step | What happens |
 |---|---|
@@ -125,6 +132,8 @@ Set `QLIB_SYNC_DATA_DIR` to use a dataset outside `~/.qlib/qlib_data/cn_data`, a
 
 Then ask things like *"Is my A-share data current? What did Moutai close at over the last
 week?"* Symbols accept `600519`, `SH600519`, or `600519.SH`.
+
+![Claude Code answering from the local dataset through qlib-sync: data freshness, Moutai closes, CSI 300 size](docs/assets/demo-claude.gif)
 
 [`skills/qlib-sync`](skills/qlib-sync/SKILL.md) is a Claude skill that teaches an assistant when
 to update, how to read each failure, and the price conventions. Copy it into your skills folder.

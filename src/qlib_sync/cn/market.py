@@ -20,6 +20,7 @@ from .update import (
     lock_dir_for,
     resolve_mirror,
     run_update as run_package_update,
+    tilde,
 )
 
 DEFAULT_DATA_DIR = Path("~/.qlib/qlib_data/cn_data").expanduser()
@@ -115,7 +116,7 @@ def collect_status(
 
 
 def print_status(result: dict) -> None:
-    print(f"CN data: {result['data_dir']}")
+    print(f"CN data: {tilde(result['data_dir'])}")
     print(f"Local latest date: {result['local_latest_date'] or 'missing'}")
     print(f"Data size: {human_size(result['size_bytes'])}")
     remote = result.get("remote_release")
@@ -127,10 +128,10 @@ def print_status(result: dict) -> None:
     for pool in result["instrument_pools"]:
         print(f"  {pool['name']}: records={pool['records']} unique_symbols={pool['unique_symbols']}")
     protected = ", ".join(result["protected_files"]) or "none"
-    print(f"Protected local pools: {protected} ({result['protected_dir']})")
+    print(f"Protected local pools: {protected} ({tilde(result['protected_dir'])})")
     print(f"Rollback backups: {len(result['backups'])}")
     for dataset in result["related_datasets"]:
-        print(f"Related dataset {dataset['name']}: latest={dataset['latest_date']} path={dataset['path']}")
+        print(f"Related dataset {dataset['name']}: latest={dataset['latest_date']} path={tilde(dataset['path'])}")
 
 
 def run_update(args: argparse.Namespace) -> None:
@@ -145,7 +146,7 @@ def run_update(args: argparse.Namespace) -> None:
         source_url=args.source_url,
         mirror=args.mirror,
     )
-    log(f"start update: data_dir={args.data_dir} protected={','.join(protected) or 'none'}")
+    log(f"start update: data_dir={tilde(args.data_dir)} protected={','.join(protected) or 'none'}")
     try:
         result = run_package_update(options)
     except UpdateError as exc:
@@ -251,7 +252,7 @@ def health_check(data_dir: Path, protected_dir: Path, skip_qlib: bool = False) -
 
 
 def run_health_check(args: argparse.Namespace) -> int:
-    log(f"start health-check: data_dir={args.data_dir}")
+    log(f"start health-check: data_dir={tilde(args.data_dir)}")
     report = health_check(args.data_dir, args.protected_dir, args.skip_qlib)
     errors, notes = report["errors"], report["checks"]
     for note in notes:
@@ -283,7 +284,7 @@ def run_restore(args: argparse.Namespace) -> None:
     backups = list_backups(args.data_dir)
     if args.list:
         for backup in backups:
-            print(f"{backup}\tlatest={read_latest_date(backup)}\tsize={human_size(directory_size(backup))}")
+            print(f"{tilde(backup)}\tlatest={read_latest_date(backup)}\tsize={human_size(directory_size(backup))}")
         return
     if not args.yes:
         raise RuntimeError("restore changes the active dataset; rerun with --yes after reviewing `restore --list`")
@@ -293,10 +294,10 @@ def run_restore(args: argparse.Namespace) -> None:
         raise RuntimeError(f"backup failed structural validation: {'; '.join(backup_errors)}")
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     displaced = args.data_dir.parent / f"cn_data_before_restore_{stamp}"
-    log(f"start restore: backup={backup} active={args.data_dir}")
+    log(f"start restore: backup={tilde(backup)} active={tilde(args.data_dir)}")
     with exclusive_lock(lock_dir_for(args.data_dir)):
         previous = replace_directory(args.data_dir, backup, displaced)
-    log(f"end restore: latest_date={read_latest_date(args.data_dir)} displaced_data={previous or 'none'}")
+    log(f"end restore: latest_date={read_latest_date(args.data_dir)} displaced_data={tilde(previous) if previous else 'none'}")
 
 
 def add_data_args(parser: argparse.ArgumentParser) -> None:

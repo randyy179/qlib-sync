@@ -6,6 +6,8 @@ import importlib
 import sys
 from pathlib import Path
 
+from .cn.update import tilde
+
 DEFAULT_QLIB_DATA_DIR = Path("~/.qlib/qlib_data").expanduser()
 
 USAGE = """usage: qlib-sync <command> [options]
@@ -42,10 +44,10 @@ def dataset_overview(base_dir: Path = DEFAULT_QLIB_DATA_DIR) -> list[dict[str, s
 def print_overview(base_dir: Path = DEFAULT_QLIB_DATA_DIR) -> None:
     rows = dataset_overview(base_dir)
     if not rows:
-        print(f"no Qlib datasets found under {base_dir}")
+        print(f"no Qlib datasets found under {tilde(base_dir)}")
         return
     width = max(len(row["name"]) for row in rows)
-    print(f"Qlib datasets under {base_dir}")
+    print(f"Qlib datasets under {tilde(base_dir)}")
     for row in rows:
         print(f"  {row['name']:<{width}}  latest={row['latest']}  freq={row['freq']}")
 

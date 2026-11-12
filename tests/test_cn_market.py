@@ -452,3 +452,11 @@ def test_same_date_without_an_install_record_is_treated_as_current(tmp_path):
     _write_manifest(tmp_path, "2026-07-03")
 
     assert cn_update.run_update(options, smoke_test=_no_smoke).status == "up_to_date"
+
+
+def test_tilde_shortens_paths_under_home_only(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert cn_update.tilde(tmp_path / ".qlib" / "cn_data") == "~/.qlib/cn_data"
+    assert cn_update.tilde(tmp_path) == "~"
+    assert cn_update.tilde(f"{tmp_path}-other/x") == f"{tmp_path}-other/x"
+    assert cn_update.tilde("/opt/data") == "/opt/data"

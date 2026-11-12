@@ -11,6 +11,8 @@ qlib-sync cn update
 
 也可以不预先安装，直接运行：`uvx qlib-sync cn update`。
 
+![qlib-sync 更新数据：查看状态、带进度下载、校验、汇报变化，再运行一次瞬间完成](docs/assets/demo-update.gif)
+
 数据来自 [chenditc/investment_data](https://github.com/chenditc/investment_data) 每天的社区发布，安装到 Qlib 默认读取的位置 `~/.qlib/qlib_data/cn_data`。原来的 Qlib 代码不用改。之后随时再运行同一条命令，数据已是最新时大约 1 秒结束。
 
 ## 为什么不直接 `wget` 加 `tar`？
@@ -22,6 +24,11 @@ Qlib 的 README 推荐用 `wget` 下载社区数据包再用 `tar` 解压。平�
 - **每次检查都要下载 550MB**，即使什么都没变。
 
 qlib-sync 把本地数据当生产系统来管理：
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/update-flow-dark.svg">
+  <img alt="更新流程：读 manifest、下载、校验、准备、切换；任何一步失败都会恢复原有数据" src="docs/assets/update-flow-light.svg">
+</picture>
 
 | 步骤 | 做什么 |
 |---|---|
@@ -104,6 +111,8 @@ claude mcp add qlib-sync -- uvx qlib-sync mcp
 | `cn_list_pool` | 某天沪深 300、中证 500 等股票池的成分股 |
 
 接好之后可以直接问："我的 A 股数据是最新的吗？茅台最近一周收盘价多少？" 股票代码写 `600519`、`SH600519`、`600519.SH` 都可以。
+
+![Claude Code 通过 qlib-sync 读取本地数据回答：数据是否最新、茅台收盘价、沪深 300 成分数量](docs/assets/demo-claude.gif)
 
 [`skills/qlib-sync`](skills/qlib-sync/SKILL.md) 是一个 Claude skill，教 AI 什么时候该更新、每种错误怎么处理、价格口径是什么。复制到你的 skills 目录即可使用。
 

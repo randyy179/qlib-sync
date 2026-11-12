@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 330" width="960" height="330" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-label="qlib-sync update flow">
+<defs>
+<marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#59636e"/></marker>
+<marker id="w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#bc4c00"/></marker>
+<marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1a7f37"/></marker>
+</defs>
+<rect width="960" height="330" rx="12" fill="#ffffff"/>
+<text x="480" y="38" text-anchor="middle" font-size="17" font-weight="600" fill="#1f2328">qlib-sync cn update</text>
+<rect x="45" y="70" width="150" height="92" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+<text x="120.0" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#0969da">1  Check</text>
+<text x="120.0" y="124" text-anchor="middle" font-size="12.5" fill="#59636e">Read the 500-byte</text>
+<text x="120.0" y="142" text-anchor="middle" font-size="12.5" fill="#59636e">release manifest</text>
+<rect x="225" y="70" width="150" height="92" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+<text x="300.0" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#0969da">2  Download</text>
+<text x="300.0" y="124" text-anchor="middle" font-size="12.5" fill="#59636e">Resumable, progress,</text>
+<text x="300.0" y="142" text-anchor="middle" font-size="12.5" fill="#59636e">optional mirror</text>
+<line x1="198" y1="116.0" x2="222" y2="116.0" stroke="#59636e" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="405" y="70" width="150" height="92" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+<text x="480.0" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#0969da">3  Verify</text>
+<text x="480.0" y="124" text-anchor="middle" font-size="12.5" fill="#59636e">Size + sha256,</text>
+<text x="480.0" y="142" text-anchor="middle" font-size="12.5" fill="#59636e">trade date matches</text>
+<line x1="378" y1="116.0" x2="402" y2="116.0" stroke="#59636e" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="585" y="70" width="150" height="92" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+<text x="660.0" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#0969da">4  Stage</text>
+<text x="660.0" y="124" text-anchor="middle" font-size="12.5" fill="#59636e">Extract beside live</text>
+<text x="660.0" y="142" text-anchor="middle" font-size="12.5" fill="#59636e">data; no downgrade</text>
+<line x1="558" y1="116.0" x2="582" y2="116.0" stroke="#59636e" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="765" y="70" width="150" height="92" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+<text x="840.0" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#0969da">5  Swap</text>
+<text x="840.0" y="124" text-anchor="middle" font-size="12.5" fill="#59636e">Rename into place,</text>
+<text x="840.0" y="142" text-anchor="middle" font-size="12.5" fill="#59636e">real Qlib read</text>
+<line x1="738" y1="116.0" x2="762" y2="116.0" stroke="#59636e" stroke-width="1.6" marker-end="url(#a)"/>
+<line x1="120.0" y1="165" x2="120.0" y2="204" stroke="#1a7f37" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#g)"/>
+<rect x="35" y="208" width="170" height="52" rx="10" fill="#dafbe1" stroke="#1a7f37"/>
+<text x="120.0" y="229" text-anchor="middle" font-size="13" font-weight="600" fill="#1a7f37">Already current</text>
+<text x="120.0" y="248" text-anchor="middle" font-size="12" fill="#59636e">done in ~1 s, no download</text>
+<line x1="300.0" y1="165" x2="300.0" y2="204" stroke="#bc4c00" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#w)"/>
+<line x1="480.0" y1="165" x2="480.0" y2="204" stroke="#bc4c00" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#w)"/>
+<line x1="660.0" y1="165" x2="660.0" y2="204" stroke="#bc4c00" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#w)"/>
+<line x1="840.0" y1="165" x2="840.0" y2="204" stroke="#bc4c00" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#w)"/>
+<rect x="219" y="208" width="702" height="52" rx="10" fill="#fff1e5" stroke="#bc4c00"/>
+<text x="570.0" y="230" text-anchor="middle" font-size="13" font-weight="600" fill="#bc4c00">Any failure: the previous dataset is put back untouched</text>
+<text x="570.0" y="249" text-anchor="middle" font-size="12" fill="#59636e">corrupt downloads are discarded, never resumed; a lock blocks concurrent runs</text>
+<text x="480" y="308" text-anchor="middle" font-size="12.5" fill="#59636e">On success: <tspan fill="#1a7f37" font-weight="600">new trading days, listed and delisted symbols</tspan> are reported; the old copy is removed or kept with --keep-backup</text>
+</svg>

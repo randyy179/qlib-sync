@@ -112,6 +112,12 @@ def warn(message: str) -> None:
     print(f"[WARN] {_stamp()} {message}", file=sys.stderr, flush=True)
 
 
+def tilde(path: Path | str) -> str:
+    """Show paths under the home folder as ~/..., shorter and without the account name."""
+    text, home = str(path), str(Path.home())
+    return "~" + text[len(home):] if text == home or text.startswith(home + os.sep) else text
+
+
 def read_last_line(path: Path) -> str:
     lines = [line.strip() for line in path.read_text().splitlines() if line.strip()]
     return lines[-1] if lines else ""
@@ -319,7 +325,7 @@ def download_package(options: UpdateOptions, target: Path, manifest: Manifest | 
         log("cached package is complete; skipping download")
         return
     if target.exists():
-        log(f"resuming incomplete package download: {target}")
+        log(f"resuming incomplete package download: {tilde(target)}")
     url = mirrored(options.source_url, resolve_mirror(options.mirror))
     if url != options.source_url:
         log(f"downloading through mirror: {url}")
@@ -425,7 +431,7 @@ def apply_protected_instruments(options: UpdateOptions, stage_dir: Path) -> None
         if active_file.is_file() and (not protected_file.is_file() or options.refresh_protected):
             options.protected_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(active_file, protected_file)
-            log(f"saved protected instrument copy: {protected_file}")
+            log(f"saved protected instrument copy: {tilde(protected_file)}")
         if protected_file.is_file():
             shutil.copy2(protected_file, stage_dir / "instruments" / instrument)
             log(f"restoring protected instrument: {instrument}")
@@ -436,7 +442,7 @@ def apply_protected_instruments(options: UpdateOptions, stage_dir: Path) -> None
 def remove_backups(base_dir: Path, keep: Path | None, label: str) -> None:
     for backup in sorted(base_dir.glob(f"{BACKUP_PREFIX}*")):
         if backup.is_dir() and backup != keep:
-            log(f"removing {label} rollback backup: {backup}")
+            log(f"removing {label} rollback backup: {tilde(backup)}")
             shutil.rmtree(backup)
 
 
@@ -470,12 +476,12 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
         calendar = data_dir / "calendars" / "day.txt"
         if calendar.is_file():
             old_latest = read_last_line(calendar)
-            log(f"starting CN data update; active_dir={data_dir} active_latest={old_latest}")
+            log(f"starting CN data update; active_dir={tilde(data_dir)} active_latest={old_latest}")
         elif data_dir.exists() and any(data_dir.iterdir()):
             raise UpdateError(f"{data_dir} exists but is not a Qlib daily dataset; refusing to replace it")
         else:
             old_latest = None
-            log(f"no existing CN data at {data_dir}; installing from the community release")
+            log(f"no existing CN data at {tilde(data_dir)}; installing from the community release")
 
         manifest = fetch_manifest(options.source_url, options.timeout, mirror)
         republished = False
@@ -532,9 +538,9 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
         elif options.keep_backup:
             remove_backups(base_dir, keep=previous, label="superseded")
             result.backup = str(previous)
-            log(f"update complete; latest_date={new_latest} rollback_backup={previous}")
+            log(f"update complete; latest_date={new_latest} rollback_backup={tilde(previous)}")
         else:
-            log(f"removing validated previous data directory: {previous}")
+            log(f"removing validated previous data directory: {tilde(previous)}")
             shutil.rmtree(previous)
             remove_backups(base_dir, keep=None, label="legacy")
             log(f"update complete; latest_date={new_latest} rollback_backup=none")
