@@ -99,27 +99,38 @@ print("\n".join(result.summary_lines()))
 print(result.new_trading_days, result.added_symbols)
 ```
 
-## Use it from Claude and other AI assistants
+## Use it from your AI assistant
 
-The MCP server runs locally: your assistant starts it on demand and it reads the dataset on
-your machine. There is no service to host and nothing leaves your computer.
+qlib-sync includes an [MCP](https://modelcontextprotocol.io) server, the open standard most AI
+tools use to call local tools. Any MCP client that can start a local command works, whichever
+model it runs: Claude, GPT, Gemini, DeepSeek, Qwen, Kimi, GLM, or a local model. The server
+runs on your machine and reads the dataset there; there is no service to host and nothing
+leaves your computer. It is listed in the [MCP Registry](https://registry.modelcontextprotocol.io)
+as `io.github.randyy179/qlib-sync`.
 
-**Claude Desktop:** download `qlib-sync.mcpb` from the
-[latest release](https://github.com/randyy179/qlib-sync/releases/latest) and open it. Claude
-installs Python and the dependencies itself.
+Every client needs the same two things: the command `uvx` and the arguments `qlib-sync mcp`.
 
-**Claude Code:**
-
-```bash
-claude mcp add qlib-sync -- uvx qlib-sync mcp
-```
-
-**Other MCP clients:** run `uvx qlib-sync mcp` as a stdio server. It is also listed in the
-[MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.randyy179/qlib-sync`.
+| Client | How to add qlib-sync |
+|---|---|
+| Claude Desktop | Download `qlib-sync.mcpb` from the [latest release](https://github.com/randyy179/qlib-sync/releases/latest) and open it |
+| Claude Code | `claude mcp add qlib-sync -- uvx qlib-sync mcp` |
+| OpenAI Codex CLI | `codex mcp add qlib-sync -- uvx qlib-sync mcp` |
+| Cursor | The JSON below, in `~/.cursor/mcp.json` |
+| Gemini CLI | The JSON below, in `~/.gemini/settings.json` |
+| Qwen Code | The JSON below, in `~/.qwen/settings.json` |
+| Tencent CodeBuddy, ByteDance Trae, Alibaba Tongyi Lingma | MCP settings, add a server manually, paste the JSON below |
+| Cherry Studio | Settings, MCP servers, add: type STDIO, command `uvx`, arguments `qlib-sync` and `mcp` on separate lines |
+| VS Code (Copilot agent mode) | `.vscode/mcp.json`: `{ "servers": { "qlib-sync": { "type": "stdio", "command": "uvx", "args": ["qlib-sync", "mcp"] } } }` |
 
 ```json
 { "mcpServers": { "qlib-sync": { "command": "uvx", "args": ["qlib-sync", "mcp"] } } }
 ```
+
+Menu names and file locations change between versions; check your client's MCP documentation
+if a path above has moved. Tested with Claude Code and OpenAI Codex CLI.
+
+Web chat apps such as ChatGPT connect only to remote MCP servers over the internet, so they
+cannot start this local server.
 
 Set `QLIB_SYNC_DATA_DIR` to use a dataset outside `~/.qlib/qlib_data/cn_data`, and
 `QLIB_SYNC_MIRROR` to download through a mirror.
@@ -137,8 +148,10 @@ week?"* Symbols accept `600519`, `SH600519`, or `600519.SH`.
 
 ![Claude Code answering from the local dataset through qlib-sync: data freshness, Moutai closes, CSI 300 size](docs/assets/demo-claude.gif)
 
-[`skills/qlib-sync`](skills/qlib-sync/SKILL.md) is a Claude skill that teaches an assistant when
-to update, how to read each failure, and the price conventions. Copy it into your skills folder.
+[`skills/qlib-sync/SKILL.md`](skills/qlib-sync/SKILL.md) teaches an assistant when to update,
+how to read each failure, and the price conventions. It uses the open `SKILL.md` format that
+Claude, Codex, and other agents load from their skills folder; any assistant can also simply
+be pointed at the file.
 
 ## Daily updates
 

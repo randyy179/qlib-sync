@@ -84,23 +84,33 @@ print("\n".join(result.summary_lines()))
 print(result.new_trading_days, result.added_symbols)
 ```
 
-## 在 Claude 等 AI 助手中使用
+## 在你的 AI 助手中使用
 
-MCP server 在你本机运行：AI 助手需要时自动启动它，它读取你电脑上的数据。不需要搭建任何服务器，数据也不会离开你的电脑。
+qlib-sync 自带一个 [MCP](https://modelcontextprotocol.io) server。MCP 是大多数 AI 工具调用本地工具的开放标准，所以只要你用的工具能启动本地命令，就能接入，不管它背后用的是哪个模型：Claude、GPT、Gemini、DeepSeek、通义千问、Kimi、智谱 GLM，或者本地部署的开源模型都可以。
 
-**Claude Desktop**：从 [最新发布](https://github.com/randyy179/qlib-sync/releases/latest) 下载 `qlib-sync.mcpb`，双击打开即可。Python 和依赖由 Claude 自动安装。
+MCP server 在你本机运行，读取你电脑上的数据，不需要搭建任何服务器，数据也不会离开你的电脑。也可以在 [MCP Registry](https://registry.modelcontextprotocol.io) 搜索 `io.github.randyy179/qlib-sync`。
 
-**Claude Code**：
+各个工具需要填的内容都一样：命令 `uvx`，参数 `qlib-sync mcp`。
 
-```bash
-claude mcp add qlib-sync -- uvx qlib-sync mcp
-```
-
-**其他 MCP 客户端**：把 `uvx qlib-sync mcp` 配置为 stdio server。也可以在 [MCP Registry](https://registry.modelcontextprotocol.io) 搜索 `io.github.randyy179/qlib-sync`。
+| 工具 | 接入方式 |
+|---|---|
+| Claude Desktop | 从[最新发布](https://github.com/randyy179/qlib-sync/releases/latest)下载 `qlib-sync.mcpb`，双击安装 |
+| Claude Code | `claude mcp add qlib-sync -- uvx qlib-sync mcp` |
+| OpenAI Codex CLI | `codex mcp add qlib-sync -- uvx qlib-sync mcp` |
+| 腾讯 CodeBuddy、字节 Trae、阿里通义灵码 | 在 MCP 设置里手动添加服务器，粘贴下面的 JSON |
+| Cherry Studio | 设置 → MCP 服务器 → 添加：类型选 STDIO，命令填 `uvx`，参数分两行填 `qlib-sync` 和 `mcp` |
+| 通义千问 Qwen Code | 把下面的 JSON 写进 `~/.qwen/settings.json` |
+| Cursor | 把下面的 JSON 写进 `~/.cursor/mcp.json` |
+| Gemini CLI | 把下面的 JSON 写进 `~/.gemini/settings.json` |
+| VS Code（Copilot Agent 模式） | `.vscode/mcp.json`：`{ "servers": { "qlib-sync": { "type": "stdio", "command": "uvx", "args": ["qlib-sync", "mcp"] } } }` |
 
 ```json
 { "mcpServers": { "qlib-sync": { "command": "uvx", "args": ["qlib-sync", "mcp"] } } }
 ```
+
+各工具的菜单名称和配置文件位置会随版本变化，找不到时以该工具的 MCP 官方文档为准。已实测：Claude Code、OpenAI Codex CLI。
+
+ChatGPT 这类网页聊天应用只能连接互联网上的远程 MCP server，无法启动本地程序，所以暂时用不了。
 
 数据不在默认位置时设置环境变量 `QLIB_SYNC_DATA_DIR`；需要走镜像时设置 `QLIB_SYNC_MIRROR`。
 
@@ -116,7 +126,7 @@ claude mcp add qlib-sync -- uvx qlib-sync mcp
 
 ![Claude Code 通过 qlib-sync 读取本地数据回答：数据是否最新、茅台收盘价、沪深 300 成分数量](docs/assets/demo-claude.gif)
 
-[`skills/qlib-sync`](skills/qlib-sync/SKILL.md) 是一个 Claude skill，教 AI 什么时候该更新、每种错误怎么处理、价格口径是什么。复制到你的 skills 目录即可使用。
+[`skills/qlib-sync/SKILL.md`](skills/qlib-sync/SKILL.md) 教 AI 什么时候该更新、每种错误怎么处理、价格口径是什么。它采用开放的 `SKILL.md` 格式，Claude、Codex 等工具可以直接从 skills 目录加载；其他 AI 助手也可以直接让它读这个文件。
 
 ## 每天自动更新
 

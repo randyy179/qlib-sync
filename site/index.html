@@ -171,6 +171,7 @@ section .intro { color: var(--ink-soft); max-width: 40em; margin: 0 0 36px; font
 .ways { margin: 0; padding: 0; list-style: none; display: grid; gap: 26px; }
 .ways h3 { font: 600 17px/1.4 var(--sans); margin: 0 0 8px; }
 .ways p { margin: 0 0 10px; color: var(--ink-soft); font-size: 16px; }
+.ways p.more { margin: 10px 0 0; font-size: 15px; }
 pre.snippet {
   margin: 0; background: var(--code-bg); color: var(--code-ink); border-radius: 8px;
   padding: 14px 16px; font-size: 14px; line-height: 1.6; overflow-x: auto;
@@ -210,7 +211,7 @@ footer p { margin: 0 0 8px; max-width: 52em; }
       qlib-sync
     </a>
     <nav>
-      <a class="hide-sm" href="#claude"><span lang="zh-CN">接入 Claude</span><span lang="en">Use with Claude</span></a>
+      <a class="hide-sm" href="#claude"><span lang="zh-CN">接入 AI 助手</span><span lang="en">Use with AI assistants</span></a>
       <a href="https://github.com/randyy179/qlib-sync">GitHub</a>
       <button class="lang-toggle" type="button" id="lang-toggle" aria-label="Switch language">
         <span lang="zh-CN">EN</span><span lang="en">中文</span>
@@ -226,8 +227,8 @@ footer p { margin: 0 0 8px; max-width: 52em; }
           <span lang="en">Your Qlib A‑share data, current and never half‑written.</span>
         </h1>
         <p class="lede">
-          <span lang="zh-CN">qlib-sync 把每天的社区数据包装进 Qlib 默认读取的 <code>~/.qlib/qlib_data/cn_data</code>，先校验、后替换，任何一步出错都保留原有数据。Claude 也能直接读取它。</span>
-          <span lang="en">qlib-sync installs the daily community release into <code>~/.qlib/qlib_data/cn_data</code>, where Qlib already looks. It verifies first and replaces second, and keeps your existing data if anything goes wrong. Claude can read it too.</span>
+          <span lang="zh-CN">qlib-sync 把每天的社区数据包装进 Qlib 默认读取的 <code>~/.qlib/qlib_data/cn_data</code>，先校验、后替换，任何一步出错都保留原有数据。你的 AI 助手也能直接读取它。</span>
+          <span lang="en">qlib-sync installs the daily community release into <code>~/.qlib/qlib_data/cn_data</code>, where Qlib already looks. It verifies first and replaces second, and keeps your existing data if anything goes wrong. Your AI assistant can read it too.</span>
         </p>
         <div class="command">
           <span class="prompt" aria-hidden="true">$</span>
@@ -330,28 +331,37 @@ footer p { margin: 0 0 8px; max-width: 52em; }
     </section>
 
     <section id="claude" aria-labelledby="claude-h">
-      <h2 id="claude-h"><span lang="zh-CN">问 Claude 你本地的数据</span><span lang="en">Ask Claude about your data</span></h2>
+      <h2 id="claude-h"><span lang="zh-CN">让 AI 助手读你本地的数据</span><span lang="en">Let your AI assistant read your data</span></h2>
       <p class="intro">
-        <span lang="zh-CN">qlib-sync 自带一个本地 MCP server。Claude 需要时自动启动它、读取你电脑上的数据。不用搭服务器，数据也不离开你的电脑。</span>
-        <span lang="en">qlib-sync includes a local MCP server. Claude starts it when needed and reads the data on your machine. There is no server to host, and your data stays on your computer.</span>
+        <span lang="zh-CN">qlib-sync 自带一个本地 MCP server。MCP 是开放标准，Claude、Codex、Cursor、CodeBuddy、Trae、通义灵码、Cherry Studio 等都支持，背后用 DeepSeek、通义千问、Kimi、GLM 还是 Claude 都可以。数据始终留在你的电脑上。</span>
+        <span lang="en">qlib-sync includes a local MCP server. MCP is an open standard supported by Claude, Codex, Cursor, CodeBuddy, Trae, Tongyi Lingma, Cherry Studio and more, whichever model they run: DeepSeek, Qwen, Kimi, GLM, or Claude. Your data stays on your computer.</span>
       </p>
       <div class="split">
         <ul class="ways">
           <li>
             <h3>Claude Desktop</h3>
             <p>
-              <span lang="zh-CN">从<a href="https://github.com/randyy179/qlib-sync/releases/latest">最新发布</a>下载 <code>qlib-sync.mcpb</code>，双击安装。Python 和依赖由 Claude 自动准备。</span>
-              <span lang="en">Download <code>qlib-sync.mcpb</code> from the <a href="https://github.com/randyy179/qlib-sync/releases/latest">latest release</a> and open it. Claude sets up Python and the dependencies.</span>
+              <span lang="zh-CN">从<a href="https://github.com/randyy179/qlib-sync/releases/latest">最新发布</a>下载 <code>qlib-sync.mcpb</code>，双击安装。</span>
+              <span lang="en">Download <code>qlib-sync.mcpb</code> from the <a href="https://github.com/randyy179/qlib-sync/releases/latest">latest release</a> and open it.</span>
             </p>
           </li>
           <li>
-            <h3>Claude Code</h3>
-            <pre class="snippet"><code>claude mcp add qlib-sync -- uvx qlib-sync mcp</code></pre>
+            <h3><span lang="zh-CN">命令行工具</span><span lang="en">Command-line agents</span></h3>
+            <pre class="snippet"><code>claude mcp add qlib-sync -- uvx qlib-sync mcp
+codex mcp add qlib-sync -- uvx qlib-sync mcp</code></pre>
           </li>
           <li>
-            <h3><span lang="zh-CN">其他 MCP 客户端</span><span lang="en">Other MCP clients</span></h3>
+            <h3><span lang="zh-CN">CodeBuddy、Trae、通义灵码、Cursor 等</span><span lang="en">Cursor, CodeBuddy, Trae, Tongyi Lingma, and others</span></h3>
+            <p>
+              <span lang="zh-CN">在 MCP 设置里手动添加，粘贴：</span>
+              <span lang="en">Add a server in the MCP settings and paste:</span>
+            </p>
             <pre class="snippet"><code>{ "mcpServers": { "qlib-sync":
   { "command": "uvx", "args": ["qlib-sync", "mcp"] } } }</code></pre>
+            <p class="more">
+              <span lang="zh-CN">Cherry Studio、VS Code、Gemini CLI、Qwen Code 的写法见<a href="https://github.com/randyy179/qlib-sync/blob/main/README.zh-CN.md#在你的-ai-助手中使用">完整说明</a>。</span>
+              <span lang="en">Cherry Studio, VS Code, Gemini CLI, and Qwen Code are covered in the <a href="https://github.com/randyy179/qlib-sync#use-it-from-your-ai-assistant">README</a>.</span>
+            </p>
           </li>
         </ul>
         <div>
@@ -361,8 +371,8 @@ footer p { margin: 0 0 8px; max-width: 52em; }
                    aria-label="Claude Code answers from the local dataset: the data runs through 2026-11-11, Moutai's last five closes, and the CSI 300 has 300 members"></video>
           </div>
           <p class="caption">
-            <span lang="zh-CN">真实对话：茅台最近 5 个交易日收盘价，从 1452.00 到 1402.30。</span>
-            <span lang="en">A real session: Moutai's last five closes, from 1,452.00 to 1,402.30.</span>
+            <span lang="zh-CN">Claude Code 中的真实对话：茅台最近 5 个交易日收盘价，从 1452.00 到 1402.30。在 Codex 中问同样的问题，得到的是同一组数字。</span>
+            <span lang="en">A real session in Claude Code: Moutai's last five closes, from 1,452.00 to 1,402.30. Codex returns the same figures for the same question.</span>
           </p>
         </div>
       </div>
