@@ -6,6 +6,8 @@
 
 [中文说明](README.zh-CN.md)
 
+**Website:** [randyy179.github.io/qlib-sync](https://randyy179.github.io/qlib-sync/)
+
 <!-- mcp-name: io.github.randyy179/qlib-sync -->
 
 **One command to install and keep current a local [Qlib](https://github.com/microsoft/qlib) China A-share dataset, and an MCP server so AI assistants can read it.**

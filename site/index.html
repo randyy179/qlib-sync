@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qlib-sync</title>
+<meta name="description" content="One command to install and keep current a local Qlib China A-share dataset, verified before it replaces anything. An MCP server lets Claude read it.">
+<meta property="og:title" content="qlib-sync">
+<meta property="og:description" content="Keep your Qlib A-share data current. Never break it.">
+<meta property="og:image" content="assets/update-flow-light.svg">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='5' fill='none' stroke='%23C23A2E' stroke-width='3'/%3E%3Cpath d='M10 16.5l4 4 8-9' fill='none' stroke='%23C23A2E' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #f5f7f9;
+  --surface: #ffffff;
+  --ink: #17243a;
+  --ink-soft: #4a5871;
+  --rule: #d9dfe7;
+  --seal: #c23a2e;
+  --seal-soft: rgba(194, 58, 46, .08);
+  --up: #d1352b;      /* China convention: red is up */
+  --down: #1d8a4e;    /* green is down */
+  --code-bg: #18263d;
+  --code-ink: #e7edf6;
+  --serif: "Noto Serif SC", "Songti SC", serif;
+  --sans: "Noto Sans SC", -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0f1a2b;
+    --surface: #152338;
+    --ink: #e8edf4;
+    --ink-soft: #a6b2c4;
+    --rule: #263852;
+    --seal: #e5574a;
+    --seal-soft: rgba(229, 87, 74, .12);
+    --up: #f0665b;
+    --down: #3fbf78;
+    --code-bg: #0b1422;
+    --code-ink: #e7edf6;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0f1a2b; --surface: #152338; --ink: #e8edf4; --ink-soft: #a6b2c4; --rule: #263852;
+  --seal: #e5574a; --seal-soft: rgba(229, 87, 74, .12); --up: #f0665b; --down: #3fbf78;
+  --code-bg: #0b1422; --code-ink: #e7edf6; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 17px/1.7 var(--sans);
+}
+html[data-lang="zh"] [lang="en"], html[data-lang="en"] [lang="zh-CN"] { display: none !important; }
+a { color: inherit; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; }
+a:hover { text-decoration-color: currentColor; }
+:focus-visible { outline: 2px solid var(--seal); outline-offset: 3px; border-radius: 4px; }
+img { max-width: 100%; display: block; }
+code, pre { font-family: var(--mono); }
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+/* Top bar */
+.bar { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+.mark { display: flex; align-items: center; gap: 10px; font: 600 18px/1 var(--mono); text-decoration: none; }
+.mark svg { width: 22px; height: 22px; }
+.bar nav { display: flex; align-items: center; gap: 22px; font-size: 15px; }
+.bar nav a { text-decoration: none; color: var(--ink-soft); }
+.bar nav a:hover { color: var(--ink); }
+.lang-toggle {
+  font: 500 14px/1 var(--sans); color: var(--ink); background: none; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 7px 12px;
+}
+.lang-toggle:hover { border-color: var(--ink-soft); }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; padding: 56px 0 104px; }
+.hero h1 {
+  font: 900 clamp(38px, 5.4vw, 62px)/1.12 var(--serif);
+  letter-spacing: -.01em; margin: 0 0 22px;
+}
+html[data-lang="en"] .hero h1 { letter-spacing: -.02em; }
+.nb { white-space: nowrap; }
+.lede { color: var(--ink-soft); font-size: 19px; max-width: 34em; margin: 0 0 30px; }
+.lede code { font-size: .88em; color: var(--ink); }
+
+.command {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--code-bg); color: var(--code-ink);
+  border-radius: 10px; padding: 14px 14px 14px 18px; max-width: 440px;
+  font: 500 16px/1.4 var(--mono);
+}
+.command .prompt { color: #7f8ea6; user-select: none; }
+.command code { flex: 1; white-space: nowrap; overflow-x: auto; }
+.copy {
+  font: 500 13px/1 var(--sans); color: var(--code-ink); cursor: pointer;
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16);
+  border-radius: 6px; padding: 7px 10px; min-width: 64px;
+}
+.copy:hover { background: rgba(255,255,255,.14); }
+.alt-install { margin: 12px 0 0; font-size: 15px; color: var(--ink-soft); }
+.alt-install code { color: var(--ink); }
+.actions { display: flex; gap: 18px; margin-top: 30px; font-size: 16px; }
+.actions a { font-weight: 500; }
+
+/* The update receipt with its seal */
+.receipt {
+  position: relative; background: var(--surface); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 28px 30px 26px;
+  box-shadow: 0 1px 0 var(--rule), 0 18px 40px -24px rgba(23, 36, 58, .35);
+}
+.receipt::before, .receipt::after {
+  /* Perforated tear edges, like a printed slip. */
+  content: ""; position: absolute; left: 14px; right: 14px; height: 8px;
+  background: radial-gradient(circle at 5px 4px, var(--paper) 3px, transparent 3.5px) repeat-x;
+  background-size: 14px 8px;
+}
+.receipt::before { top: -4px; }
+.receipt::after { bottom: -4px; }
+.receipt h2 { font: 600 15px/1.4 var(--sans); color: var(--ink-soft); margin: 0 0 18px; }
+.receipt dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 10px 22px; }
+.receipt dt { color: var(--ink-soft); font-size: 15px; }
+.receipt dd { margin: 0; font: 500 15px/1.6 var(--mono); text-align: right; overflow-wrap: anywhere; }
+.receipt .rule { grid-column: 1 / -1; border-top: 1px dashed var(--rule); margin: 6px 0; }
+.receipt .up { color: var(--up); }
+.receipt .result { margin: 20px 0 0; font-size: 15px; color: var(--ink-soft); max-width: calc(100% - 92px); }
+.seal {
+  position: absolute; right: -10px; bottom: -38px; width: 112px; height: 112px;
+  color: var(--seal); transform: rotate(-11deg); pointer-events: none;
+  mix-blend-mode: multiply;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .seal { mix-blend-mode: normal; opacity: .92; } }
+:root[data-theme="dark"] .seal { mix-blend-mode: normal; opacity: .92; }
+.seal svg { width: 100%; height: 100%; }
+@media (prefers-reduced-motion: no-preference) {
+  .seal { animation: stamp .55s cubic-bezier(.2, .9, .25, 1.25) .9s both; }
+  @keyframes stamp {
+    0%   { opacity: 0; transform: rotate(-11deg) scale(1.9); }
+    70%  { opacity: 1; transform: rotate(-11deg) scale(.94); }
+    100% { opacity: 1; transform: rotate(-11deg) scale(1); }
+  }
+}
+
+/* Sections */
+section { padding: 72px 0; border-top: 1px solid var(--rule); }
+section h2 { font: 900 clamp(28px, 3.4vw, 38px)/1.25 var(--serif); margin: 0 0 14px; }
+section .intro { color: var(--ink-soft); max-width: 40em; margin: 0 0 36px; font-size: 18px; }
+
+.shot { border-radius: 10px; overflow: hidden; border: 1px solid var(--rule); background: #0d1117; }
+.shot img, .shot video { width: 100%; height: auto; display: block; }
+.caption { font-size: 14px; color: var(--ink-soft); margin: 12px 0 0; }
+
+.problems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; margin: 0 0 44px; padding: 0; list-style: none; }
+.problems li { border-left: 3px solid var(--seal); padding: 2px 0 2px 18px; }
+.problems strong { display: block; font: 600 18px/1.45 var(--sans); margin-bottom: 6px; }
+.problems span { color: var(--ink-soft); font-size: 16px; }
+.problems a { white-space: nowrap; }
+.flow { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 8px; }
+.limit { margin: 22px 0 0; font-size: 15px; color: var(--ink-soft); max-width: 46em; }
+
+.split { display: grid; grid-template-columns: .9fr 1.1fr; gap: 48px; align-items: start; }
+.ways { margin: 0; padding: 0; list-style: none; display: grid; gap: 26px; }
+.ways h3 { font: 600 17px/1.4 var(--sans); margin: 0 0 8px; }
+.ways p { margin: 0 0 10px; color: var(--ink-soft); font-size: 16px; }
+pre.snippet {
+  margin: 0; background: var(--code-bg); color: var(--code-ink); border-radius: 8px;
+  padding: 14px 16px; font-size: 14px; line-height: 1.6; overflow-x: auto;
+}
+.tools { margin: 30px 0 0; font-size: 15px; color: var(--ink-soft); }
+.tools code { color: var(--ink); }
+
+.py pre.snippet { max-width: 640px; font-size: 15px; }
+.py .hl-c { color: #7f8ea6; }
+.py .hl-k { color: #f0a3a0; }
+.py .hl-s { color: #9fd7b4; }
+
+footer { border-top: 1px solid var(--rule); padding: 40px 0 56px; color: var(--ink-soft); font-size: 15px; }
+footer p { margin: 0 0 8px; max-width: 52em; }
+
+@media (max-width: 860px) {
+  .hero { grid-template-columns: 1fr; gap: 44px; padding: 28px 0 64px; }
+  .split { grid-template-columns: 1fr; gap: 36px; }
+  .problems { grid-template-columns: 1fr; gap: 22px; }
+  section { padding: 56px 0; }
+  .bar nav .hide-sm { display: none; }
+}
+@media (max-width: 480px) {
+  .wrap { padding: 0 16px; }
+  .receipt { padding: 24px 20px 22px; }
+  .seal { width: 92px; height: 92px; right: -6px; bottom: -34px; }
+  .receipt .result { max-width: calc(100% - 78px); }
+  .command { font-size: 14px; padding-left: 14px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <a class="mark" href="./" aria-label="qlib-sync">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="26" height="26" rx="5" fill="none" stroke="var(--seal)" stroke-width="3"/><path d="M10 16.5l4 4 8-9" fill="none" stroke="var(--seal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      qlib-sync
+    </a>
+    <nav>
+      <a class="hide-sm" href="#claude"><span lang="zh-CN">接入 Claude</span><span lang="en">Use with Claude</span></a>
+      <a href="https://github.com/randyy179/qlib-sync">GitHub</a>
+      <button class="lang-toggle" type="button" id="lang-toggle" aria-label="Switch language">
+        <span lang="zh-CN">EN</span><span lang="en">中文</span>
+      </button>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div>
+        <h1>
+          <span lang="zh-CN"><span class="nb">本地 A 股数据，</span><br><span class="nb">始终最新，</span><span class="nb">从不损坏。</span></span>
+          <span lang="en">Your Qlib A‑share data, current and never half‑written.</span>
+        </h1>
+        <p class="lede">
+          <span lang="zh-CN">qlib-sync 把每天的社区数据包装进 Qlib 默认读取的 <code>~/.qlib/qlib_data/cn_data</code>，先校验、后替换，任何一步出错都保留原有数据。Claude 也能直接读取它。</span>
+          <span lang="en">qlib-sync installs the daily community release into <code>~/.qlib/qlib_data/cn_data</code>, where Qlib already looks. It verifies first and replaces second, and keeps your existing data if anything goes wrong. Claude can read it too.</span>
+        </p>
+        <div class="command">
+          <span class="prompt" aria-hidden="true">$</span>
+          <code id="cmd">uvx qlib-sync cn update</code>
+          <button class="copy" type="button" data-copy="uvx qlib-sync cn update">
+            <span lang="zh-CN">复制</span><span lang="en">Copy</span>
+          </button>
+        </div>
+        <p class="alt-install">
+          <span lang="zh-CN">或者 <code>pip install qlib-sync</code>。已是最新时约 1 秒结束。</span>
+          <span lang="en">Or <code>pip install qlib-sync</code>. When nothing is new, it finishes in about a second.</span>
+        </p>
+        <div class="actions">
+          <a href="https://github.com/randyy179/qlib-sync"><span lang="zh-CN">查看源码</span><span lang="en">View the source</span></a>
+          <a href="https://github.com/randyy179/qlib-sync/blob/main/README.zh-CN.md" lang="zh-CN">完整说明</a>
+          <a href="https://github.com/randyy179/qlib-sync#readme" lang="en">Read the docs</a>
+        </div>
+      </div>
+
+      <aside class="receipt" aria-label="Example update result">
+        <h2>
+          <span lang="zh-CN">一次真实的更新记录</span>
+          <span lang="en">A real update, as recorded</span>
+        </h2>
+        <dl>
+          <dt><span lang="zh-CN">数据包日期</span><span lang="en">Release</span></dt><dd>2026-11-11</dd>
+          <dt><span lang="zh-CN">大小</span><span lang="en">Size</span></dt><dd>544.7 MiB</dd>
+          <dt>sha256</dt><dd title="889ff1e9a448846c92496e2e7b3dd9eef4e6b7bf588b351210d611c6f0fb3359">889ff1e9…6f0fb3359</dd>
+          <div class="rule" role="presentation"></div>
+          <dt><span lang="zh-CN">新增交易日</span><span lang="en">New trading days</span></dt><dd class="up">+1</dd>
+          <dt><span lang="zh-CN">Qlib 读取</span><span lang="en">Qlib read</span></dt><dd><span lang="zh-CN">通过</span><span lang="en">passed</span></dd>
+          <dt><span lang="zh-CN">旧数据</span><span lang="en">Previous data</span></dt><dd><span lang="zh-CN">校验后删除</span><span lang="en">removed</span></dd>
+        </dl>
+        <p class="result">
+          <span lang="zh-CN">下载 29 秒，校验、切换、读取共 17 秒。</span>
+          <span lang="en">29 s to download; 17 s to verify, swap, and read.</span>
+        </p>
+        <div class="seal" aria-hidden="true">
+          <svg viewBox="0 0 120 120">
+            <rect x="8" y="8" width="104" height="104" rx="10" fill="none" stroke="currentColor" stroke-width="6"/>
+            <rect x="17" y="17" width="86" height="86" rx="5" fill="none" stroke="currentColor" stroke-width="2"/>
+            <text x="60" y="62" text-anchor="middle" font-family="Noto Serif SC, Songti SC, serif" font-weight="900" font-size="31" fill="currentColor">已校验</text>
+            <text x="60" y="88" text-anchor="middle" font-family="JetBrains Mono, monospace" font-weight="500" font-size="13" fill="currentColor" letter-spacing="1">SHA256</text>
+          </svg>
+        </div>
+      </aside>
+    </div>
+
+    <section aria-labelledby="see">
+      <h2 id="see"><span lang="zh-CN">更新是什么样子</span><span lang="en">What an update looks like</span></h2>
+      <p class="intro">
+        <span lang="zh-CN">先看状态，再更新：带进度下载、核对校验值、汇报新增了哪些交易日。再运行一次，因为没有新数据，一秒结束。</span>
+        <span lang="en">Check the status, then update: the download shows progress, the checksum is confirmed, and new trading days are listed. Run it again and it finishes in a second, because nothing is new.</span>
+      </p>
+      <div class="shot">
+        <video class="demo" src="assets/demo-update.mp4" poster="assets/demo-update-poster.jpg"
+               width="1320" height="540" autoplay muted loop playsinline preload="auto"
+               aria-label="Terminal: qlib-sync updates from the 2026-11-10 release to 2026-11-11, then reports it is already up to date"></video>
+      </div>
+      <p class="caption">
+        <span lang="zh-CN">真实录制，2 倍速播放。</span>
+        <span lang="en">Recorded for real, played at 2× speed.</span>
+      </p>
+    </section>
+
+    <section aria-labelledby="why">
+      <h2 id="why"><span lang="zh-CN">为什么不直接 wget 加 tar</span><span lang="en">Why not just wget and tar</span></h2>
+      <p class="intro">
+        <span lang="zh-CN">Qlib 的说明推荐用一行 wget 下载社区数据包。平时没问题，直到遇到这些情况：</span>
+        <span lang="en">Qlib's README suggests a one-line wget of the community release. That works until one of these happens:</span>
+      </p>
+      <ul class="problems">
+        <li>
+          <strong><span lang="zh-CN">下载到一半断了</span><span lang="en">The download breaks halfway</span></strong>
+          <span lang="zh-CN">解压出半截数据，或者旧数据已被覆盖才发现失败。</span>
+          <span lang="en">You extract half a dataset, or find out after the old one is already overwritten.</span>
+        </li>
+        <li>
+          <strong><span lang="zh-CN">上游修正后重新发布</span><span lang="en">The release gets corrected</span></strong>
+          <span lang="zh-CN">上游发现数据错误后，用同一个日期重新发布（<a href="https://github.com/chenditc/investment_data/issues/163">#163</a>）。只看日期永远拿不到修复。</span>
+          <span lang="en">Upstream republishes a date after fixing data (<a href="https://github.com/chenditc/investment_data/issues/163">#163</a>). Comparing dates alone never picks up the fix.</span>
+        </li>
+        <li>
+          <strong><span lang="zh-CN">每次都下载 550 MB</span><span lang="en">Every check costs 550 MB</span></strong>
+          <span lang="zh-CN">即使什么都没变。qlib-sync 先读一个 500 字节的清单。</span>
+          <span lang="en">Even when nothing changed. qlib-sync reads a 500-byte manifest first.</span>
+        </li>
+      </ul>
+      <div class="flow">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="assets/update-flow-dark.svg">
+          <img src="assets/update-flow-light.svg" width="960" height="330" loading="lazy"
+               alt="Update flow: check the manifest, download, verify size and sha256, stage beside the live data, swap and read with Qlib. Any failure puts the previous dataset back.">
+        </picture>
+      </div>
+      <p class="limit">
+        <span lang="zh-CN">这些校验能挡住损坏、不完整或被篡改的数据包，挡不住上游正常发布的数据里本身的数值错误。需要时可以用 <code>--keep-backup</code> 保留一份旧数据。</span>
+        <span lang="en">These checks catch broken, truncated, or tampered packages. They cannot catch wrong values inside a correctly published release; keep a rollback copy with <code>--keep-backup</code> if you need one.</span>
+      </p>
+    </section>
+
+    <section id="claude" aria-labelledby="claude-h">
+      <h2 id="claude-h"><span lang="zh-CN">问 Claude 你本地的数据</span><span lang="en">Ask Claude about your data</span></h2>
+      <p class="intro">
+        <span lang="zh-CN">qlib-sync 自带一个本地 MCP server。Claude 需要时自动启动它、读取你电脑上的数据。不用搭服务器，数据也不离开你的电脑。</span>
+        <span lang="en">qlib-sync includes a local MCP server. Claude starts it when needed and reads the data on your machine. There is no server to host, and your data stays on your computer.</span>
+      </p>
+      <div class="split">
+        <ul class="ways">
+          <li>
+            <h3>Claude Desktop</h3>
+            <p>
+              <span lang="zh-CN">从<a href="https://github.com/randyy179/qlib-sync/releases/latest">最新发布</a>下载 <code>qlib-sync.mcpb</code>，双击安装。Python 和依赖由 Claude 自动准备。</span>
+              <span lang="en">Download <code>qlib-sync.mcpb</code> from the <a href="https://github.com/randyy179/qlib-sync/releases/latest">latest release</a> and open it. Claude sets up Python and the dependencies.</span>
+            </p>
+          </li>
+          <li>
+            <h3>Claude Code</h3>
+            <pre class="snippet"><code>claude mcp add qlib-sync -- uvx qlib-sync mcp</code></pre>
+          </li>
+          <li>
+            <h3><span lang="zh-CN">其他 MCP 客户端</span><span lang="en">Other MCP clients</span></h3>
+            <pre class="snippet"><code>{ "mcpServers": { "qlib-sync":
+  { "command": "uvx", "args": ["qlib-sync", "mcp"] } } }</code></pre>
+          </li>
+        </ul>
+        <div>
+          <div class="shot">
+            <video class="demo" src="assets/demo-claude.mp4" poster="assets/demo-claude-poster.jpg"
+                   width="1240" height="920" autoplay muted loop playsinline preload="auto"
+                   aria-label="Claude Code answers from the local dataset: the data runs through 2026-11-11, Moutai's last five closes, and the CSI 300 has 300 members"></video>
+          </div>
+          <p class="caption">
+            <span lang="zh-CN">真实对话：茅台最近 5 个交易日收盘价，从 1452.00 到 1402.30。</span>
+            <span lang="en">A real session: Moutai's last five closes, from 1,452.00 to 1,402.30.</span>
+          </p>
+        </div>
+      </div>
+      <p class="tools">
+        <span lang="zh-CN">提供的工具：<code>cn_status</code> 查数据状态，<code>cn_update</code> 更新，<code>cn_health_check</code> 检查，<code>cn_get_prices</code> 取日线（默认真实成交价），<code>cn_list_pool</code> 查沪深 300 等成分股。</span>
+        <span lang="en">Tools: <code>cn_status</code>, <code>cn_update</code>, <code>cn_health_check</code>, <code>cn_get_prices</code> (real traded prices by default), and <code>cn_list_pool</code> for CSI 300 and other pools.</span>
+      </p>
+    </section>
+
+    <section class="py" aria-labelledby="py">
+      <h2 id="py"><span lang="zh-CN">在 notebook 里用</span><span lang="en">From a notebook</span></h2>
+      <p class="intro">
+        <span lang="zh-CN">回测前确保数据是最新的，原来的 Qlib 代码不用改。</span>
+        <span lang="en">Make sure the data is current before a backtest. Your Qlib code stays the same.</span>
+      </p>
+      <pre class="snippet"><code><span class="hl-k">from</span> qlib_sync <span class="hl-k">import</span> update_cn
+
+result = update_cn()   <span class="hl-c"># raises UpdateError on failure; existing data unchanged</span>
+<span class="hl-k">print</span>(result.latest_date, result.new_trading_days)
+
+<span class="hl-k">import</span> qlib
+qlib.init(provider_uri=<span class="hl-s">"~/.qlib/qlib_data/cn_data"</span>)</code></pre>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      <span lang="zh-CN">数据全部来自 <a href="https://github.com/chenditc/investment_data">chenditc/investment_data</a>（Apache-2.0），感谢维护者。qlib-sync 只下载其公开发布的文件，不托管、不分发数据。</span>
+      <span lang="en">All data comes from <a href="https://github.com/chenditc/investment_data">chenditc/investment_data</a> (Apache-2.0); thanks to its maintainers. qlib-sync only downloads the public release and does not host or redistribute data.</span>
+    </p>
+    <p>
+      <span lang="zh-CN">独立项目，与微软及 Qlib 团队无关。MIT 协议。支持 macOS 与 Linux，Python 3.10 至 3.12。</span>
+      <span lang="en">An independent project, not affiliated with Microsoft or the Qlib team. MIT licensed. macOS and Linux, Python 3.10 to 3.12.</span>
+    </p>
+    <p><a href="https://github.com/randyy179/qlib-sync">github.com/randyy179/qlib-sync</a></p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  function setLang(lang) {
+    root.setAttribute("data-lang", lang);
+    root.setAttribute("lang", lang === "zh" ? "zh-CN" : "en");
+    try { localStorage.setItem("qlib-sync-lang", lang); } catch (e) {}
+  }
+  var saved = null;
+  try { saved = localStorage.getItem("qlib-sync-lang"); } catch (e) {}
+  var preferred = (navigator.language || "en").toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
+  setLang(saved === "zh" || saved === "en" ? saved : preferred);
+
+  document.getElementById("lang-toggle").addEventListener("click", function () {
+    setLang(root.getAttribute("data-lang") === "zh" ? "en" : "zh");
+  });
+
+  // Demos autoplay (muted). With reduced motion, show the final frame and a play button instead.
+  if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.querySelectorAll("video.demo").forEach(function (v) {
+      v.autoplay = false;
+      v.pause();
+      v.load();  // back to the poster
+      v.controls = true;
+    });
+  }
+
+  document.querySelectorAll("[data-copy]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var text = button.getAttribute("data-copy");
+      var done = function () {
+        var zh = root.getAttribute("data-lang") === "zh";
+        var original = button.innerHTML;
+        button.textContent = zh ? "已复制" : "Copied";
+        setTimeout(function () { button.innerHTML = original; }, 1600);
+      };
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(done, function () {});
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>

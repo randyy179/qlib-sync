@@ -2,6 +2,8 @@
 
 [English](README.md)
 
+**网站：**[randyy179.github.io/qlib-sync](https://randyy179.github.io/qlib-sync/)
+
 **一条命令安装并保持更新本地 [Qlib](https://github.com/microsoft/qlib) A 股数据，并提供 MCP server，让 AI 助手直接读取。**
 
 ```bash
