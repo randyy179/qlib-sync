@@ -10,13 +10,19 @@ from qlib_sync.cn import market as collector
 from qlib_sync.cn import update as cn_update
 
 
+FUTURE_DAY = "2026-12-31"
+
+
 def _write_dataset(path: Path, latest: str) -> None:
+    """A minimal dataset shaped like a real release: calendars, every index pool, one feature."""
     (path / "calendars").mkdir(parents=True)
     (path / "features" / "sh600000").mkdir(parents=True)
     (path / "instruments").mkdir(parents=True)
     (path / "calendars" / "day.txt").write_text(f"{latest}\n")
+    (path / "calendars" / "day_future.txt").write_text(f"{latest}\n{FUTURE_DAY}\n")
     (path / "features" / "sh600000" / "close.day.bin").write_bytes(b"test")
-    (path / "instruments" / "all.txt").write_text(f"SH600000\t2020-01-01\t{latest}\n")
+    for pool in cn_update.REQUIRED_POOLS:
+        (path / "instruments" / f"{pool}.txt").write_text(f"SH600000\t2020-01-01\t{latest}\n")
 
 
 def test_read_latest_date_and_instrument_stats(tmp_path):
@@ -111,12 +117,18 @@ def _make_update(tmp_path, active="2026-07-02", package="2026-07-03", **override
     return data_dir, options
 
 
-def _write_manifest(tmp_path: Path, trade_date: str, sha256: str | None = None, size: int | None = None) -> None:
+def _write_manifest(
+    tmp_path: Path, trade_date: str, sha256: str | None = None, size: int | None = None, **extra
+) -> None:
     archive = tmp_path / "qlib_bin.tar.gz"
     payload = {
         "target_trade_date": trade_date,
-        "archive_sha256": f"sha256:{sha256 or hashlib.sha256(archive.read_bytes()).hexdigest()}",
+        "future_start_date": FUTURE_DAY,
+        "future_end_date": FUTURE_DAY,
+        "image_digest": "sha256:" + "a" * 64,
         "archive_size_bytes": archive.stat().st_size if size is None else size,
+        "archive_sha256": f"sha256:{sha256 or hashlib.sha256(archive.read_bytes()).hexdigest()}",
+        **extra,
     }
     (tmp_path / cn_update.MANIFEST_NAME).write_text(json.dumps(payload))
 
@@ -460,3 +472,73 @@ def test_tilde_shortens_paths_under_home_only(monkeypatch, tmp_path):
     assert cn_update.tilde(tmp_path) == "~"
     assert cn_update.tilde(f"{tmp_path}-other/x") == f"{tmp_path}-other/x"
     assert cn_update.tilde("/opt/data") == "/opt/data"
+
+
+def _repack(tmp_path: Path) -> None:
+    staged = tmp_path / "release" / "cn_data"
+    with tarfile.open(tmp_path / "qlib_bin.tar.gz", "w:gz") as tar:
+        tar.add(staged, arcname="release/cn_data")
+
+
+def test_release_must_be_marked_publishable(tmp_path):
+    data_dir, options = _make_update(tmp_path)
+    _write_manifest(tmp_path, "2026-07-03", image_digest=None)
+
+    with pytest.raises(cn_update.UpdateError, match="not publishable"):
+        cn_update.run_update(options, smoke_test=_no_smoke)
+
+    assert collector.read_latest_date(data_dir) == "2026-07-02"
+
+
+def test_every_index_pool_must_reach_the_trade_date(tmp_path):
+    data_dir, options = _make_update(tmp_path)
+    staged = tmp_path / "release" / "cn_data"
+    (staged / "instruments" / "csi500.txt").write_text("SH600000\t2020-01-01\t2026-07-02\n")
+    _repack(tmp_path)
+    _write_manifest(tmp_path, "2026-07-03")
+
+    with pytest.raises(cn_update.UpdateError, match="csi500 pool ends at 2026-07-02"):
+        cn_update.run_update(options, smoke_test=_no_smoke)
+
+    assert collector.read_latest_date(data_dir) == "2026-07-02"
+
+
+def test_missing_index_pool_is_rejected(tmp_path):
+    _, options = _make_update(tmp_path)
+    (tmp_path / "release" / "cn_data" / "instruments" / "csi1000.txt").unlink()
+    _repack(tmp_path)
+    _write_manifest(tmp_path, "2026-07-03")
+
+    with pytest.raises(cn_update.UpdateError, match="missing the csi1000 index pool"):
+        cn_update.run_update(options, smoke_test=_no_smoke)
+
+
+def test_future_calendar_must_match_the_manifest(tmp_path):
+    _, options = _make_update(tmp_path)
+    _write_manifest(tmp_path, "2026-07-03", future_end_date="2027-01-29")
+
+    with pytest.raises(cn_update.UpdateError, match="future calendar does not match"):
+        cn_update.run_update(options, smoke_test=_no_smoke)
+
+
+def test_future_calendar_must_extend_the_trading_calendar(tmp_path):
+    _, options = _make_update(tmp_path)
+    (tmp_path / "release" / "cn_data" / "calendars" / "day_future.txt").write_text(f"2026-07-02\n{FUTURE_DAY}\n")
+    _repack(tmp_path)
+    _write_manifest(tmp_path, "2026-07-03")
+
+    with pytest.raises(cn_update.UpdateError, match="does not extend"):
+        cn_update.run_update(options, smoke_test=_no_smoke)
+
+
+def test_older_manifest_without_new_fields_still_updates(tmp_path):
+    # A manifest that predates the future and image fields must not block updates.
+    data_dir, options = _make_update(tmp_path)
+    archive = tmp_path / "qlib_bin.tar.gz"
+    (tmp_path / cn_update.MANIFEST_NAME).write_text(json.dumps({
+        "target_trade_date": "2026-07-03",
+        "archive_sha256": "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "archive_size_bytes": archive.stat().st_size,
+    }))
+
+    assert cn_update.run_update(options, smoke_test=_no_smoke).latest_date == "2026-07-03"

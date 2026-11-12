@@ -331,6 +331,10 @@ footer p { margin: 0 0 8px; max-width: 52em; }
         </picture>
       </div>
       <p class="limit">
+        <span lang="zh-CN">investment_data 自己的说明也给出了手动校验流程（manifest 加 <code>validate_archive.py</code>）。qlib-sync 每次自动执行同样的检查，并补上自动跳过、整体切换和失败回滚。</span>
+        <span lang="en">The investment_data README describes a manual check with the manifest and <code>validate_archive.py</code>. qlib-sync runs the same checks on every update and adds the skip, the atomic swap, and the rollback.</span>
+      </p>
+      <p class="limit">
         <span lang="zh-CN">这些校验能挡住损坏、不完整或被篡改的数据包，挡不住上游正常发布的数据里本身的数值错误。需要时可以用 <code>--keep-backup</code> 保留一份旧数据。</span>
         <span lang="en">These checks catch broken, truncated, or tampered packages. They cannot catch wrong values inside a correctly published release; keep a rollback copy with <code>--keep-backup</code> if you need one.</span>
       </p>

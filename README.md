@@ -40,6 +40,12 @@ That works until it doesn't:
   were republished under the same date. A date check alone never sees the fix.
 - **Every check downloads 550 MB**, even when nothing changed.
 
+The investment_data README itself describes a careful manual process: download the release
+manifest, check the archive with its `validate_archive.py`, then extract. qlib-sync runs the
+same checks automatically on every update and adds what a manual process cannot: it skips the
+download when nothing changed, extracts beside the live data and swaps it in with rollback
+(rather than extracting on top of the existing folder), and picks up republished releases.
+
 qlib-sync treats the dataset like a production system:
 
 <picture>
@@ -51,7 +57,7 @@ qlib-sync treats the dataset like a production system:
 |---|---|
 | Check | Reads the release's 500-byte manifest. Already current: done, nothing downloaded. |
 | Download | Resumes interrupted downloads; shows progress; optional mirror for slow links to GitHub. |
-| Verify | Size and sha256 from the manifest; the calendar must end on the manifest's trade date; archive paths and links are checked before extraction. |
+| Verify | Size and sha256 from the manifest; the same release checks as upstream's `validate_archive.py` (every index pool and the future calendar reach the manifest's dates, release marked publishable); archive paths and links are checked before extraction. |
 | Stage | Extracts next to the active dataset; refuses downgrades. |
 | Swap | Renames the new dataset into place, then runs a real Qlib read. |
 | Roll back | Any failure after the swap moves the previous dataset back. |

@@ -41,6 +41,11 @@ class Manifest:
     trade_date: str
     sha256: str | None = None
     size: int | None = None
+    future_start: str | None = None
+    future_end: str | None = None
+    # Upstream marks a release publishable by recording its build image digest; None means it
+    # recorded the field as empty, and absent means an older manifest format.
+    publishable: bool | None = None
 
 
 @dataclass
@@ -180,7 +185,57 @@ def parse_manifest(payload: dict) -> Manifest:
         if not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise ValueError(f"archive_sha256 is not a sha256 digest: {payload.get('archive_sha256')!r}")
     size = payload.get("archive_size_bytes")
-    return Manifest(trade_date=trade_date, sha256=digest, size=int(size) if size is not None else None)
+    future = {}
+    for key in ("future_start_date", "future_end_date"):
+        value = payload.get(key)
+        if value is not None and not DATE_PATTERN.match(str(value)):
+            raise ValueError(f"{key} is not a date: {value!r}")
+        future[key] = str(value) if value is not None else None
+    return Manifest(
+        trade_date=trade_date,
+        sha256=digest,
+        size=int(size) if size is not None else None,
+        future_start=future["future_start_date"],
+        future_end=future["future_end_date"],
+        publishable=(payload["image_digest"] is not None) if "image_digest" in payload else None,
+    )
+
+
+# The files upstream's own validate_archive.py requires in a publishable release.
+REQUIRED_POOLS = ("all", "csi300", "csi500", "csi800", "csi1000", "csiall")
+
+
+def read_dates(path: Path) -> list[str]:
+    return [line.strip() for line in path.read_text().splitlines() if line.strip()]
+
+
+def check_release_contents(stage_dir: Path, manifest: Manifest) -> None:
+    """Apply the checks chenditc/investment_data's validate_archive.py applies to a release.
+
+    Every index pool must reach the target trade date, and the future calendar must extend
+    the trading calendar and match the manifest. Only used when the manifest is available,
+    since that is what pins down the upstream release format.
+    """
+    if manifest.publishable is False:
+        raise UpdateError("the release manifest marks this package as not publishable; refusing to install it")
+    target = manifest.trade_date
+    for pool in REQUIRED_POOLS:
+        path = stage_dir / "instruments" / f"{pool}.txt"
+        if not path.is_file():
+            raise UpdateError(f"package is missing the {pool} index pool")
+        ends = [line.split("\t")[2] for line in path.read_text().splitlines() if line.count("\t") == 2]
+        if not ends or max(ends) != target:
+            raise UpdateError(f"the {pool} pool ends at {max(ends) if ends else 'nothing'}, not at {target}")
+    future_path = stage_dir / "calendars" / "day_future.txt"
+    if not future_path.is_file():
+        raise UpdateError("package is missing calendars/day_future.txt")
+    day, future = read_dates(stage_dir / "calendars" / "day.txt"), read_dates(future_path)
+    if len(future) <= len(day) or future[: len(day)] != day:
+        raise UpdateError("the future calendar does not extend the trading calendar")
+    if (manifest.future_start and future[len(day)] != manifest.future_start) or (
+        manifest.future_end and future[-1] != manifest.future_end
+    ):
+        raise UpdateError("the future calendar does not match the manifest")
 
 
 def _read_manifest(url: str, timeout: int) -> Manifest:
@@ -487,6 +542,8 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
         republished = False
         if manifest:
             log(f"release manifest: trade_date={manifest.trade_date}")
+            if manifest.publishable is False:
+                raise UpdateError("the release manifest marks this package as not publishable; refusing to install it")
             republished = bool(old_latest) and is_republished(manifest, old_latest, read_install_record(data_dir))
             if republished:
                 log(f"the {old_latest} release was republished upstream (new checksum); replacing local data")
@@ -509,6 +566,8 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
             raise UpdateError(f"downloaded calendar has an invalid latest date: {new_latest}")
         if manifest and new_latest != manifest.trade_date:
             raise UpdateError(f"package calendar ends at {new_latest}, but the manifest says {manifest.trade_date}")
+        if manifest:
+            check_release_contents(stage_dir, manifest)
         if old_latest and new_latest < old_latest:
             raise UpdateError(f"refusing downgrade: package ends at {new_latest}, active data ends at {old_latest}")
         if old_latest and new_latest == old_latest and not (options.force or republished):
