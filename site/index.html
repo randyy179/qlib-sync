@@ -159,6 +159,8 @@ section .intro { color: var(--ink-soft); max-width: 40em; margin: 0 0 36px; font
 .shot img, .shot video { width: 100%; height: auto; display: block; }
 .caption { font-size: 14px; color: var(--ink-soft); margin: 12px 0 0; }
 
+.comic { margin: 0 0 44px; max-width: 620px; }
+.comic img { width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 10px; background: #fff; }
 .problems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; margin: 0 0 44px; padding: 0; list-style: none; }
 .problems li { border-left: 3px solid var(--seal); padding: 2px 0 2px 18px; }
 .problems strong { display: block; font: 600 18px/1.45 var(--sans); margin-bottom: 6px; }
@@ -300,6 +302,10 @@ footer p { margin: 0 0 8px; max-width: 52em; }
         <span lang="zh-CN">Qlib 的说明推荐用一行 wget 下载社区数据包。平时没问题，直到遇到这些情况：</span>
         <span lang="en">Qlib's README suggests a one-line wget of the community release. That works until one of these happens:</span>
       </p>
+      <figure class="comic">
+        <img src="assets/comic.jpg" width="1000" height="1000" loading="lazy"
+             alt="四格漫画 / Four-panel comic: a download dies at 99% at night; the next day 550 MB arrive and nothing changed; the qlib-sync robot verifies the data, stamps it, and keeps the old copy safe; the researcher relaxes and asks an AI for Moutai's recent closes.">
+      </figure>
       <ul class="problems">
         <li>
           <strong><span lang="zh-CN">下载到一半断了</span><span lang="en">The download breaks halfway</span></strong>

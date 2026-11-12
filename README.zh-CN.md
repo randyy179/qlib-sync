@@ -19,6 +19,8 @@ qlib-sync cn update
 
 ## 为什么不直接 `wget` 加 `tar`？
 
+<img src="docs/assets/comic.jpg" width="560" alt="四格漫画：深夜下载 A 股数据断在 99%；第二天又下了 550MB 结果啥也没变；qlib-sync 机器人先校验再替换、出错自动回滚；研究员喝着茶让 AI 直接读最新数据">
+
 Qlib 的 README 推荐用 `wget` 下载社区数据包再用 `tar` 解压。平时没问题，但会遇到这些情况：
 
 - **下载中断或不完整**：解压出半截数据，或者旧数据已经被覆盖了才发现失败。
