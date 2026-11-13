@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import hashlib
 import json
 import os
 import re
@@ -17,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
+from .._upstream import validate_archive as upstream
 from ..txn import LockedError, exclusive_lock, replace_directory
 
 DEFAULT_SOURCE_URL = "https://github.com/chenditc/investment_data/releases/latest/download/qlib_bin.tar.gz"
@@ -28,24 +28,53 @@ CHUNK_SIZE = 1 << 20
 USER_AGENT = "qlib-sync"
 MIRROR_ENV = "QLIB_SYNC_MIRROR"
 INSTALL_RECORD = ".qlib-sync.json"
+LATEST_SEGMENT = "/releases/latest/download/"
+TAG_IN_URL = re.compile(r"/releases/download/([^/]+)/")
+UNVERIFIED_HINT = "pass --allow-unverified to install without verification"
 
 
 class UpdateError(RuntimeError):
     """The update could not be completed; the active dataset is unchanged."""
 
 
-@dataclass
-class Manifest:
-    """What the community release says about its package, read before downloading it."""
+class ManifestError(UpdateError):
+    """The release manifest could not be read, or the upstream validator rejected it."""
 
-    trade_date: str
-    sha256: str | None = None
-    size: int | None = None
-    future_start: str | None = None
-    future_end: str | None = None
-    # Upstream marks a release publishable by recording its build image digest; None means it
-    # recorded the field as empty, and absent means an older manifest format.
-    publishable: bool | None = None
+
+@dataclass
+class Release:
+    """One community release, pinned by tag, with its manifest already validated.
+
+    `manifest` is what chenditc/investment_data's validate_archive.py returned for the raw
+    manifest bytes, so every field has passed the maintainers' own format checks.
+    """
+
+    tag: str
+    tag_source: str  # "release URL", or "manifest" when the tag could not be resolved independently
+    archive_url: str
+    manifest: dict
+    manifest_path: Path
+
+    @property
+    def trade_date(self) -> str:
+        return self.manifest["target_trade_date"]
+
+    @property
+    def sha256(self) -> str:
+        return self.manifest["archive_sha256"].removeprefix("sha256:")
+
+    @property
+    def size(self) -> int:
+        return self.manifest["archive_size_bytes"]
+
+    def describe(self) -> dict:
+        return {
+            "tag": self.tag,
+            "tag_source": self.tag_source,
+            "trade_date": self.trade_date,
+            "size": self.size,
+            "sha256": self.sha256,
+        }
 
 
 @dataclass
@@ -59,6 +88,7 @@ class UpdateOptions:
     keep_backup: bool = False
     force: bool = False
     download_cache_dir: Path | None = None
+    allow_unverified: bool = False
     retries: int = 3
     retry_delay: float = 3.0
     timeout: int = 60
@@ -75,14 +105,19 @@ class UpdateResult:
     added_symbols: list[str] = field(default_factory=list)
     delisted_symbols: list[str] = field(default_factory=list)
     backup: str | None = None
+    verified: bool = False
+    verification: str = ""
 
     def summary_lines(self) -> list[str]:
         if self.status == "up_to_date":
             return [f"Already up to date: data ends at {self.latest_date}."]
         if self.status == "installed":
-            return [f"Installed CN data through {self.latest_date}."]
+            return [f"Installed CN data through {self.latest_date}.", self._verification_line()]
         if self.status == "republished":
-            return [f"Replaced CN data through {self.latest_date} with a corrected upstream release."]
+            return [
+                f"Replaced CN data through {self.latest_date} with a corrected upstream release.",
+                self._verification_line(),
+            ]
         days = self.new_trading_days
         span = f"{days[0]} to {days[-1]}" if len(days) > 1 else (days[0] if days else "none")
         lines = [
@@ -93,7 +128,13 @@ class UpdateResult:
         ]
         if self.backup:
             lines.append(f"Rollback backup kept at {self.backup}")
+        lines.append(self._verification_line())
         return lines
+
+    def _verification_line(self) -> str:
+        if self.verified:
+            return f"Verified: {self.verification}."
+        return f"WARNING: installed WITHOUT verification ({self.verification})."
 
 
 def _preview(symbols: list[str], limit: int = 8) -> str:
@@ -140,25 +181,30 @@ def read_install_record(data_dir: Path) -> dict:
         return {}
 
 
-def write_install_record(data_dir: Path, trade_date: str, manifest: Manifest | None) -> None:
+def write_install_record(data_dir: Path, trade_date: str, release: Release | None) -> None:
     record = {
         "trade_date": trade_date,
-        "archive_sha256": manifest.sha256 if manifest else None,
+        "release_tag": release.tag if release else None,
+        "archive_sha256": release.sha256 if release else None,
+        "verified": release is not None,
         "installed_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
     }
     (data_dir / INSTALL_RECORD).write_text(json.dumps(record, indent=2) + "\n")
 
 
-def is_republished(manifest: Manifest, old_latest: str, record: dict) -> bool:
-    """Upstream sometimes republishes the same trade date after fixing data; detect it by checksum."""
+def is_republished(release: Release, old_latest: str, record: dict) -> bool:
+    """Whether the verified release should replace local data for the same trade date.
+
+    True when upstream republished that date with a new checksum (it does so after fixing data),
+    or when the local copy was installed with --allow-unverified. Records written before 0.2.0
+    carry no `verified` flag and are compared by checksum only.
+    """
+    if release.trade_date != old_latest or record.get("trade_date") != old_latest:
+        return False
+    if record.get("verified") is False:
+        return True
     installed = record.get("archive_sha256")
-    return bool(
-        manifest.trade_date == old_latest
-        and manifest.sha256
-        and installed
-        and record.get("trade_date") == old_latest
-        and installed != manifest.sha256
-    )
+    return bool(installed) and installed != release.sha256
 
 
 def resolve_mirror(mirror: str | None) -> str | None:
@@ -175,100 +221,109 @@ def manifest_url(source_url: str) -> str:
     return f"{source_url.rsplit('/', 1)[0]}/{MANIFEST_NAME}"
 
 
-def parse_manifest(payload: dict) -> Manifest:
-    trade_date = str(payload.get("target_trade_date") or "")
-    if not DATE_PATTERN.match(trade_date):
-        raise ValueError(f"target_trade_date is missing or invalid: {trade_date!r}")
-    digest = payload.get("archive_sha256")
-    if digest is not None:
-        digest = str(digest).removeprefix("sha256:").lower()
-        if not re.fullmatch(r"[0-9a-f]{64}", digest):
-            raise ValueError(f"archive_sha256 is not a sha256 digest: {payload.get('archive_sha256')!r}")
-    size = payload.get("archive_size_bytes")
-    future = {}
-    for key in ("future_start_date", "future_end_date"):
-        value = payload.get(key)
-        if value is not None and not DATE_PATTERN.match(str(value)):
-            raise ValueError(f"{key} is not a date: {value!r}")
-        future[key] = str(value) if value is not None else None
-    return Manifest(
-        trade_date=trade_date,
-        sha256=digest,
-        size=int(size) if size is not None else None,
-        future_start=future["future_start_date"],
-        future_end=future["future_end_date"],
-        publishable=(payload["image_digest"] is not None) if "image_digest" in payload else None,
-    )
+def tagged_url(source_url: str, tag: str) -> str:
+    """Pin a releases/latest URL to one tag, so the manifest and archive come from the same release."""
+    return source_url.replace(LATEST_SEGMENT, f"/releases/download/{tag}/") if LATEST_SEGMENT in source_url else source_url
 
 
-# The files upstream's own validate_archive.py requires in a publishable release.
-REQUIRED_POOLS = ("all", "csi300", "csi500", "csi800", "csi1000", "csiall")
+class _StopAtRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):  # noqa: D102 - returning None surfaces the 3xx
+        return None
 
 
-def read_dates(path: Path) -> list[str]:
-    return [line.strip() for line in path.read_text().splitlines() if line.strip()]
+def resolve_release_tag(source_url: str, timeout: int) -> str | None:
+    """The tag a URL names, or the tag GitHub's releases/latest redirect points to right now.
 
-
-def check_release_contents(stage_dir: Path, manifest: Manifest) -> None:
-    """Apply the checks chenditc/investment_data's validate_archive.py applies to a release.
-
-    Every index pool must reach the target trade date, and the future calendar must extend
-    the trading calendar and match the manifest. Only used when the manifest is available,
-    since that is what pins down the upstream release format.
+    Returns None for sources that name no tag (a local file, a custom server).
     """
-    if manifest.publishable is False:
-        raise UpdateError("the release manifest marks this package as not publishable; refusing to install it")
-    target = manifest.trade_date
-    for pool in REQUIRED_POOLS:
-        path = stage_dir / "instruments" / f"{pool}.txt"
-        if not path.is_file():
-            raise UpdateError(f"package is missing the {pool} index pool")
-        ends = [line.split("\t")[2] for line in path.read_text().splitlines() if line.count("\t") == 2]
-        if not ends or max(ends) != target:
-            raise UpdateError(f"the {pool} pool ends at {max(ends) if ends else 'nothing'}, not at {target}")
-    future_path = stage_dir / "calendars" / "day_future.txt"
-    if not future_path.is_file():
-        raise UpdateError("package is missing calendars/day_future.txt")
-    day, future = read_dates(stage_dir / "calendars" / "day.txt"), read_dates(future_path)
-    if len(future) <= len(day) or future[: len(day)] != day:
-        raise UpdateError("the future calendar does not extend the trading calendar")
-    if (manifest.future_start and future[len(day)] != manifest.future_start) or (
-        manifest.future_end and future[-1] != manifest.future_end
-    ):
-        raise UpdateError("the future calendar does not match the manifest")
+    named = TAG_IN_URL.search(source_url)
+    if named:
+        return named.group(1)
+    if LATEST_SEGMENT not in source_url:
+        return None
+    request = urllib.request.Request(manifest_url(source_url), method="HEAD", headers={"User-Agent": USER_AGENT})
+    try:
+        urllib.request.build_opener(_StopAtRedirect).open(request, timeout=timeout).close()
+    except urllib.error.HTTPError as exc:
+        location = TAG_IN_URL.search(exc.headers.get("Location", "") or "")
+        if 300 <= exc.code < 400 and location:
+            return location.group(1)
+        raise
+    raise OSError("releases/latest did not redirect to a tagged release")
 
 
-def _read_manifest(url: str, timeout: int) -> Manifest:
+def _read_bytes(url: str, timeout: int) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        return parse_manifest(json.load(response))
+        return response.read()
 
 
-def fetch_manifest(source_url: str, timeout: int = 15, mirror: str | None = None) -> Manifest | None:
-    """Return the release manifest, or None (with a warning) when it cannot be used.
-
-    The manifest is read from the source directly when possible, so its checksum stays
-    independent of any mirror that serves the package. It is an optimization and an
-    integrity check, not a requirement: when it is missing or its format changes, the
-    update falls back to validating the package itself after download.
-    """
-    url = manifest_url(source_url)
-    errors = (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError)
+def _read_manifest_bytes(url: str, timeout: int, mirror: str | None, try_direct: bool = True) -> bytes:
+    """Read the manifest directly when possible, so its checksum does not depend on the mirror."""
+    direct_error: Exception | str = "skipped: GitHub was unreachable"
     try:
-        return _read_manifest(url, min(timeout, 10) if mirror else timeout)
-    except errors as exc:
+        if not try_direct:
+            raise ConnectionError(direct_error)
+        return _read_bytes(url, min(timeout, 10) if mirror else timeout)
+    except (OSError, urllib.error.URLError) as exc:
         if not mirror:
-            warn(f"release manifest unavailable ({exc}); the package will be validated after download")
-            return None
+            raise ManifestError(f"could not read the release manifest: {exc}") from exc
         direct_error = exc
     try:
-        manifest = _read_manifest(mirrored(url, mirror), timeout)
-    except errors as exc:
-        warn(f"release manifest unavailable directly ({direct_error}) or via the mirror ({exc}); "
-             "the package will be validated after download")
-        return None
+        raw = _read_bytes(mirrored(url, mirror), timeout)
+    except (OSError, urllib.error.URLError) as exc:
+        raise ManifestError(
+            f"could not read the release manifest directly ({direct_error}) or via the mirror ({exc})"
+        ) from exc
     warn("release manifest was read through the mirror; its checksum is only as trustworthy as the mirror")
-    return manifest
+    return raw
+
+
+def fetch_release(source_url: str, timeout: int, mirror: str | None, scratch_dir: Path) -> Release:
+    """Pin the release by tag, read its manifest, and validate it with the upstream validator.
+
+    Raises ManifestError when the manifest is unavailable or the validator rejects it.
+    """
+    tag, tag_source, github_reachable = None, "release URL", True
+    try:
+        tag = resolve_release_tag(source_url, min(timeout, 15))
+    except (OSError, urllib.error.URLError) as exc:
+        if not mirror:
+            raise ManifestError(f"could not resolve the current release tag: {exc}") from exc
+        warn(f"could not reach GitHub to resolve the release tag ({exc}); reading it through the mirror")
+        github_reachable = False
+    pinned = tagged_url(source_url, tag) if tag else source_url
+    raw = _read_manifest_bytes(manifest_url(pinned), timeout, mirror, try_direct=github_reachable)
+    if tag is None:
+        # Without an independent tag, the manifest's own tag is all there is to check against.
+        try:
+            tag = json.loads(raw.decode("utf-8")).get("release_tag")
+        except (UnicodeDecodeError, json.JSONDecodeError, AttributeError) as exc:
+            raise ManifestError(f"the release manifest is not valid JSON: {exc}") from exc
+        if not isinstance(tag, str) or not DATE_PATTERN.match(tag):
+            raise ManifestError(f"the release manifest has no usable release_tag: {tag!r}")
+        tag_source = "manifest"
+        pinned = tagged_url(source_url, tag)
+        warn("the release tag was taken from the manifest itself, so the tag check cannot catch a mismatched manifest")
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = scratch_dir / MANIFEST_NAME
+    manifest_path.write_bytes(raw)
+    try:
+        manifest, _digest = upstream._load_manifest(manifest_path, tag, True)  # pylint: disable=protected-access
+    except upstream.ValidationFailure as exc:
+        raise ManifestError(f"the release manifest failed the upstream validator ({exc.token})") from exc
+    return Release(tag=tag, tag_source=tag_source, archive_url=pinned, manifest=manifest, manifest_path=manifest_path)
+
+
+def verify_with_upstream(archive: Path, release: Release) -> str:
+    """Run chenditc/investment_data's validate_archive.py exactly as its README documents."""
+    try:
+        upstream.validate(archive, release.manifest_path, release.tag, require_publishable=True)
+    except upstream.ValidationFailure as exc:
+        # A rejected package must not linger as a 550 MB cache file or be reused next run.
+        clear_download_cache(archive)
+        raise UpdateError(f"the package failed the upstream validator ({exc.token}); nothing was changed") from exc
+    return f"investment_data validate_archive.py --require-publishable passed for release {release.tag}"
 
 
 def qlib_calendar_smoke_test(data_dir: Path) -> None:
@@ -357,10 +412,10 @@ def _download_once(url: str, target: Path, timeout: int, expected_size: int | No
         progress.finish()
 
 
-def prepare_download_cache(target: Path, manifest: Manifest | None) -> None:
+def prepare_download_cache(target: Path, release: Release | None) -> None:
     """Discard a cached partial download that belongs to a different package."""
     marker = target.with_name(f"{target.name}.sha256")
-    expected = manifest.sha256 if manifest else None
+    expected = release.sha256 if release else None
     if target.exists() and expected and (not marker.is_file() or marker.read_text().strip() != expected):
         log("discarding a cached partial download from a different package")
         target.unlink()
@@ -375,19 +430,20 @@ def clear_download_cache(target: Path) -> None:
     target.with_name(f"{target.name}.sha256").unlink(missing_ok=True)
 
 
-def download_package(options: UpdateOptions, target: Path, manifest: Manifest | None) -> None:
-    if manifest and manifest.size and target.exists() and target.stat().st_size == manifest.size:
+def download_package(options: UpdateOptions, target: Path, release: Release | None) -> None:
+    if release and target.exists() and target.stat().st_size == release.size:
         log("cached package is complete; skipping download")
         return
     if target.exists():
         log(f"resuming incomplete package download: {tilde(target)}")
-    url = mirrored(options.source_url, resolve_mirror(options.mirror))
-    if url != options.source_url:
+    source = release.archive_url if release else options.source_url
+    url = mirrored(source, resolve_mirror(options.mirror))
+    if url != source:
         log(f"downloading through mirror: {url}")
     last_error: Exception | None = None
     for attempt in range(1, options.retries + 1):
         try:
-            _download_once(url, target, options.timeout, manifest.size if manifest else None)
+            _download_once(url, target, options.timeout, release.size if release else None)
             return
         except (OSError, urllib.error.URLError) as exc:
             last_error = exc
@@ -396,24 +452,6 @@ def download_package(options: UpdateOptions, target: Path, manifest: Manifest | 
                 time.sleep(options.retry_delay)
     hint = "" if resolve_mirror(options.mirror) else f"; behind a slow connection to GitHub, try --mirror or {MIRROR_ENV}"
     raise UpdateError(f"could not download the community package: {last_error}{hint}")
-
-
-def verify_package(target: Path, manifest: Manifest | None) -> None:
-    if manifest is None:
-        return
-    if manifest.size is not None and target.stat().st_size != manifest.size:
-        actual = target.stat().st_size
-        clear_download_cache(target)
-        raise UpdateError(f"package size {actual} does not match the manifest ({manifest.size})")
-    if manifest.sha256 is not None:
-        digest = hashlib.sha256()
-        with target.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(CHUNK_SIZE), b""):
-                digest.update(chunk)
-        if digest.hexdigest() != manifest.sha256:
-            clear_download_cache(target)
-            raise UpdateError("package sha256 does not match the release manifest; the download was discarded")
-        log("package sha256 matches the release manifest")
 
 
 def extract_package(archive: Path, extract_dir: Path) -> Path:
@@ -506,9 +544,11 @@ def run_update(
 ) -> UpdateResult:
     """Install or update the dataset and describe what changed.
 
-    The release manifest is read first so an up-to-date dataset costs one small request.
-    The package is verified and validated in a staging directory, then swapped in with
-    `replace_directory`, which restores the previous dataset if the smoke test fails.
+    The release is pinned by tag and its manifest is validated first, so an up-to-date dataset
+    costs two small requests. The package is checked with the dataset maintainers' own
+    validator (`--require-publishable`), extracted to a staging directory, and swapped in with
+    `replace_directory`, which restores the previous dataset if the smoke test fails. Without
+    a valid manifest the update is refused unless `allow_unverified` is set.
     """
     options.data_dir.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -528,6 +568,7 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
     mirror = resolve_mirror(options.mirror)
 
     try:
+        work_dir.mkdir(parents=True)
         calendar = data_dir / "calendars" / "day.txt"
         if calendar.is_file():
             old_latest = read_last_line(calendar)
@@ -538,43 +579,54 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
             old_latest = None
             log(f"no existing CN data at {tilde(data_dir)}; installing from the community release")
 
-        manifest = fetch_manifest(options.source_url, options.timeout, mirror)
+        release: Release | None
+        unverified_reason = ""
+        try:
+            release = fetch_release(options.source_url, options.timeout, mirror, work_dir)
+        except ManifestError as exc:
+            if not options.allow_unverified:
+                raise UpdateError(f"{exc}; refusing to install unverified data ({UNVERIFIED_HINT})") from exc
+            warn(f"{exc}; continuing WITHOUT verification because --allow-unverified was given")
+            release, unverified_reason = None, str(exc)
+
         republished = False
-        if manifest:
-            log(f"release manifest: trade_date={manifest.trade_date}")
-            if manifest.publishable is False:
-                raise UpdateError("the release manifest marks this package as not publishable; refusing to install it")
-            republished = bool(old_latest) and is_republished(manifest, old_latest, read_install_record(data_dir))
+        if release:
+            log(f"release {release.tag}: trade_date={release.trade_date}; manifest passed the upstream validator")
+            republished = bool(old_latest) and is_republished(release, old_latest, read_install_record(data_dir))
             if republished:
                 log(f"the {old_latest} release was republished upstream (new checksum); replacing local data")
-            elif old_latest and manifest.trade_date <= old_latest and not options.force:
-                log(f"already up to date; local data ends at {old_latest}, release ends at {manifest.trade_date}")
-                return UpdateResult(status="up_to_date", latest_date=old_latest, previous_date=old_latest)
+            elif old_latest and release.trade_date <= old_latest and not options.force:
+                log(f"already up to date; local data ends at {old_latest}, release ends at {release.trade_date}")
+                return UpdateResult(
+                    status="up_to_date", latest_date=old_latest, previous_date=old_latest, verified=True,
+                    verification=f"manifest for release {release.tag} passed the upstream validator",
+                )
 
         log("downloading community package")
         download_file.parent.mkdir(parents=True, exist_ok=True)
-        prepare_download_cache(download_file, manifest)
-        download_package(options, download_file, manifest)
-        verify_package(download_file, manifest)
+        prepare_download_cache(download_file, release)
+        download_package(options, download_file, release)
+        if release:
+            log("running investment_data's validate_archive.py --require-publishable")
+            verification = verify_with_upstream(download_file, release)
+            log(verification)
+        else:
+            verification = f"--allow-unverified: {unverified_reason}"
 
-        log("extracting and validating package")
+        log("extracting package")
         extract_dir = work_dir / "extract"
         extract_dir.mkdir(parents=True)
         stage_dir = extract_package(download_file, extract_dir)
         new_latest = read_last_line(stage_dir / "calendars" / "day.txt")
         if not DATE_PATTERN.match(new_latest):
             raise UpdateError(f"downloaded calendar has an invalid latest date: {new_latest}")
-        if manifest and new_latest != manifest.trade_date:
-            raise UpdateError(f"package calendar ends at {new_latest}, but the manifest says {manifest.trade_date}")
-        if manifest:
-            check_release_contents(stage_dir, manifest)
         if old_latest and new_latest < old_latest:
             raise UpdateError(f"refusing downgrade: package ends at {new_latest}, active data ends at {old_latest}")
         if old_latest and new_latest == old_latest and not (options.force or republished):
             log(f"package ends at {new_latest}, same as active data; no replacement needed")
             clear_download_cache(download_file)
             return UpdateResult(status="up_to_date", latest_date=old_latest, previous_date=old_latest)
-        log(f"validated package; active_latest={old_latest or 'none'} package_latest={new_latest}")
+        log(f"package ready; active_latest={old_latest or 'none'} package_latest={new_latest}")
 
         if old_latest:
             result = describe_change(data_dir, old_latest, stage_dir, new_latest)
@@ -582,8 +634,9 @@ def _run_update_locked(options: UpdateOptions, smoke_test: Callable[[Path], None
                 result.status = "republished"
         else:
             result = UpdateResult(status="installed", latest_date=new_latest)
+        result.verified, result.verification = release is not None, verification
         apply_protected_instruments(options, stage_dir)
-        write_install_record(stage_dir, new_latest, manifest)
+        write_install_record(stage_dir, new_latest, release)
 
         log("switching data directories and running a Qlib read smoke test")
         try:

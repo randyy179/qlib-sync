@@ -7,6 +7,7 @@ import dataclasses
 import datetime as dt
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 from ..txn import exclusive_lock, replace_directory
@@ -16,7 +17,8 @@ from .update import (
     MIRROR_ENV,
     UpdateError,
     UpdateOptions,
-    fetch_manifest,
+    ManifestError,
+    fetch_release,
     lock_dir_for,
     resolve_mirror,
     run_update as run_package_update,
@@ -104,14 +106,19 @@ def collect_status(
         "backups": [str(path) for path in backups],
         "related_datasets": related_dataset_status(data_dir),
         "remote_release": None,
+        "remote_error": None,
         "update_available": None,
     }
     if not offline:
-        manifest = fetch_manifest(source_url, timeout, resolve_mirror(mirror))
-        if manifest:
-            result["remote_release"] = dataclasses.asdict(manifest)
-            local = result["local_latest_date"]
-            result["update_available"] = local is None or manifest.trade_date > local
+        with tempfile.TemporaryDirectory(prefix="qlib-sync-status-") as scratch:
+            try:
+                release = fetch_release(source_url, timeout, resolve_mirror(mirror), Path(scratch))
+            except ManifestError as exc:
+                result["remote_error"] = str(exc)
+            else:
+                result["remote_release"] = release.describe()
+                local = result["local_latest_date"]
+                result["update_available"] = local is None or release.trade_date > local
     return result
 
 
@@ -123,7 +130,9 @@ def print_status(result: dict) -> None:
     if remote:
         size = f", {human_size(remote['size'])}" if remote.get("size") else ""
         state = "update available" if result["update_available"] else "up to date"
-        print(f"Community release: trade date {remote['trade_date']}{size} ({state})")
+        print(f"Community release {remote['tag']}: trade date {remote['trade_date']}{size} ({state})")
+    elif result.get("remote_error"):
+        print(f"Community release: cannot be verified ({result['remote_error']})")
     print("Instrument pools:")
     for pool in result["instrument_pools"]:
         print(f"  {pool['name']}: records={pool['records']} unique_symbols={pool['unique_symbols']}")
@@ -142,6 +151,7 @@ def run_update(args: argparse.Namespace) -> None:
         protected=protected,
         refresh_protected=args.refresh_protected,
         keep_backup=args.keep_backup,
+        allow_unverified=args.allow_unverified,
         force=args.force,
         source_url=args.source_url,
         mirror=args.mirror,
@@ -335,6 +345,13 @@ def add_subcommands(parser: argparse.ArgumentParser) -> None:
     update_parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL, help="Community package URL")
     update_parser.add_argument("--json", action="store_true", help="Print the update result as JSON")
     add_mirror_arg(update_parser)
+    update_parser.add_argument(
+        "--allow-unverified",
+        action="store_true",
+        help="Install even when the release manifest is missing or fails the upstream validator. "
+        "Nothing about such a package is checked beyond safe extraction, and the result is marked "
+        "unverified. A package that disagrees with a valid manifest is always refused.",
+    )
 
     health_parser = subparsers.add_parser("health-check", help="Validate structure, protected pools, and Qlib reads")
     add_data_args(health_parser)

@@ -1,7 +1,8 @@
 name: Upstream check
 
-# Weekly check that the community release still has the manifest fields and freshness
-# qlib-sync relies on. A failure here means upstream changed, not that our code broke.
+# Weekly check that the latest community release passes the vendored upstream validator,
+# and that upstream has not changed that validator. A failure means upstream changed,
+# not that our code broke.
 on:
   schedule:
     - cron: "17 1 * * 1"   # Mondays 01:17 UTC (09:17 China time)
@@ -20,5 +21,7 @@ jobs:
         run: |
           uv venv --python 3.12
           uv pip install -e .
-      - name: Check the latest release
+      - name: Check the latest release and the upstream validator
         run: .venv/bin/python tools/check_upstream.py
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

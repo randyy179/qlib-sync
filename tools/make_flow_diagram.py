@@ -14,7 +14,7 @@ PALETTES = {
 STEPS = [
     ("1  Check", ["Read the 500-byte", "release manifest"]),
     ("2  Download", ["Resumable, progress,", "optional mirror"]),
-    ("3  Verify", ["Size + sha256,", "trade date matches"]),
+    ("3  Verify", ["Upstream validator,", "--require-publishable"]),
     ("4  Stage", ["Extract beside live", "data; no downgrade"]),
     ("5  Swap", ["Rename into place,", "real Qlib read"]),
 ]

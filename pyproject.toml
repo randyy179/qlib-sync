@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "qlib-sync"
-version = "0.1.1"
+version = "0.2.0"
 description = "Safely install and update a local Qlib China A-share dataset, with an MCP server for AI assistants."
 dynamic = ["readme"]
 requires-python = ">=3.10,<3.13"

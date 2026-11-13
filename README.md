@@ -43,9 +43,15 @@ That works until it doesn't:
 - **Every check downloads 550 MB**, even when nothing changed.
 
 The investment_data README itself describes a careful manual process: download the release
-manifest, check the archive with its `validate_archive.py`, then extract. qlib-sync runs the
-same checks automatically on every update and adds what a manual process cannot: it skips the
-download when nothing changed, extracts beside the live data and swaps it in with rollback
+manifest, check the archive with `qlib/validate_archive.py --require-publishable`, then
+extract. qlib-sync runs that validator itself, on every update: an unmodified copy (from
+[commit 68fdc66](https://github.com/chenditc/investment_data/blob/68fdc66b109459e522050c94723684525aea23ab/qlib/validate_archive.py),
+Apache-2.0) checks the manifest before the download and the archive after it. A test suite
+feeds the same malformed releases to the upstream script and to qlib-sync and requires the same
+verdict, and a weekly job flags any change upstream makes to the validator.
+
+On top of that, qlib-sync skips the download when nothing changed, pins the manifest and the
+archive to one release tag, extracts beside the live data and swaps it in with rollback
 (rather than extracting on top of the existing folder), and picks up republished releases.
 
 qlib-sync treats the dataset like a production system:
@@ -57,17 +63,22 @@ qlib-sync treats the dataset like a production system:
 
 | Step | What happens |
 |---|---|
-| Check | Reads the release's 500-byte manifest. Already current: done, nothing downloaded. |
+| Check | Pins the latest release by tag and reads its 500-byte manifest. Already current: done, nothing downloaded. |
 | Download | Resumes interrupted downloads; shows progress; optional mirror for slow links to GitHub. |
-| Verify | Size and sha256 from the manifest; the same release checks as upstream's `validate_archive.py` (every index pool and the future calendar reach the manifest's dates, release marked publishable); archive paths and links are checked before extraction. |
+| Verify | investment_data's own `validate_archive.py --require-publishable`, unmodified: manifest fields and formats, size and sha256, every required calendar and index pool, date formats, ordering, and the future calendar. Anything it rejects is refused. |
 | Stage | Extracts next to the active dataset; refuses downgrades. |
 | Swap | Renames the new dataset into place, then runs a real Qlib read. |
 | Roll back | Any failure after the swap moves the previous dataset back. |
 | Report | New trading days, newly listed and delisted symbols. |
 
-The checks catch broken, truncated, or tampered packages. They cannot catch wrong values inside a
-correctly published release (like the one in #163); for that, keep a rollback copy with
-`--keep-backup`.
+**Verification is required by default.** If the manifest is missing, unreadable, or rejected by
+the validator, the update stops and your data stays as it was. `--allow-unverified` installs
+anyway when the manifest cannot be verified, and the result and install record are then marked
+unverified; a package whose checksum disagrees with a valid manifest is always refused.
+
+The checks catch broken, truncated, tampered, or malformed packages. They cannot catch wrong
+values inside a correctly published release (like the one in #163); for that, keep a rollback
+copy with `--keep-backup`.
 
 ## Commands
 
@@ -88,6 +99,7 @@ Useful options for `cn update`:
 | `--keep-backup` | Keep the previous dataset for one rollback |
 | `--protect FILE` | Carry a custom stock pool in `instruments/` across updates (repeatable) |
 | `--force` | Reinstall even when the dates match |
+| `--allow-unverified` | Install when the manifest cannot be verified (marked unverified; checksum mismatches are still refused) |
 
 **The update replaces the whole `cn_data` folder.** Anything you added there is lost unless you
 pass it with `--protect`.

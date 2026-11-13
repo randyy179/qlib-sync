@@ -140,9 +140,10 @@ def create_server(data_dir: Path | None = None, source_url: str = DEFAULT_SOURCE
     async def cn_update(force: bool = False) -> dict[str, Any]:
         """Install or update the local A-share data from the community release.
 
-        Returns quickly when already current. Otherwise downloads about 550 MB, verifies its
-        checksum, and swaps it in; this takes roughly a minute. On any failure the previous
-        data is restored. The result lists new trading days and listed/delisted symbols.
+        Returns quickly when already current. Otherwise downloads about 550 MB, checks it with
+        the dataset maintainers' own validator, and swaps it in; this takes roughly a minute.
+        A release that cannot be verified is refused, and on any failure the previous data is
+        restored. The result lists new trading days, listed/delisted symbols, and `verified`.
         """
         options = UpdateOptions(
             data_dir=data_dir, protected_dir=market.DEFAULT_PROTECTED_DIR, source_url=source_url, force=force

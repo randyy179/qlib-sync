@@ -1,5 +1,4 @@
 import asyncio
-import tarfile
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +8,7 @@ from mcp import Client
 
 from qlib_sync import mcp_server
 from qlib_sync.mcp_server import create_server, normalize_symbol
+from release_fixture import POOLS, calendar_files, publish
 
 DAYS = ["2026-07-01", "2026-07-02", "2026-07-03"]
 BARS = {
@@ -109,12 +109,18 @@ def test_list_pool_status_and_health(server):
     assert health["ok"] is True, health
 
 
+def _publish_qlib_release(root: Path) -> str:
+    """Publish the readable test dataset as an upstream-format release with a valid manifest."""
+    staged = _write_qlib_dataset(root / "staged")
+    files = {str(path.relative_to(staged)): path.read_bytes() for path in staged.rglob("*") if path.is_file()}
+    rows = "".join(f"{line}\n" for line in sorted(files["instruments/all.txt"].decode().splitlines()))
+    files.update({f"instruments/{pool}.txt": rows for pool in POOLS})
+    files.update(calendar_files(DAYS))
+    return publish(root / "upstream", DAYS, files=files)
+
+
 def test_update_installs_then_prices_are_readable(tmp_path):
-    staged = _write_qlib_dataset(tmp_path / "release" / "cn_data")
-    archive = tmp_path / "qlib_bin.tar.gz"
-    with tarfile.open(archive, "w:gz") as tar:
-        tar.add(staged, arcname="release/cn_data")
-    server = create_server(tmp_path / "qlib_data" / "cn_data", source_url=archive.as_uri())
+    server = create_server(tmp_path / "qlib_data" / "cn_data", source_url=_publish_qlib_release(tmp_path))
 
     before = _call(server, "cn_get_prices", {"symbols": ["600519"], "start": "2026-07-01"})
     update = _call(server, "cn_update").structured_content
@@ -122,6 +128,7 @@ def test_update_installs_then_prices_are_readable(tmp_path):
 
     assert before.is_error and "call cn_update" in before.content[0].text
     assert update["status"] == "installed" and update["latest_date"] == "2026-07-03"
+    assert update["verified"] is True and update["summary"][-1].startswith("Verified:")
     assert after["total_rows"] == 3
 
 

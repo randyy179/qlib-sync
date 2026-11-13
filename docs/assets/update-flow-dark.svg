@@ -17,8 +17,8 @@
 <line x1="198" y1="116.0" x2="222" y2="116.0" stroke="#9198a1" stroke-width="1.6" marker-end="url(#a)"/>
 <rect x="405" y="70" width="150" height="92" rx="10" fill="#161b22" stroke="#3d444d"/>
 <text x="480.0" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#4493f8">3  Verify</text>
-<text x="480.0" y="124" text-anchor="middle" font-size="12.5" fill="#9198a1">Size + sha256,</text>
-<text x="480.0" y="142" text-anchor="middle" font-size="12.5" fill="#9198a1">trade date matches</text>
+<text x="480.0" y="124" text-anchor="middle" font-size="12.5" fill="#9198a1">Upstream validator,</text>
+<text x="480.0" y="142" text-anchor="middle" font-size="12.5" fill="#9198a1">--require-publishable</text>
 <line x1="378" y1="116.0" x2="402" y2="116.0" stroke="#9198a1" stroke-width="1.6" marker-end="url(#a)"/>
 <rect x="585" y="70" width="150" height="92" rx="10" fill="#161b22" stroke="#3d444d"/>
 <text x="660.0" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#4493f8">4  Stage</text>

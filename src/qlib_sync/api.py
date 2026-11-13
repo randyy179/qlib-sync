@@ -25,13 +25,16 @@ def update_cn(
     protect: Iterable[str] = (),
     keep_backup: bool = False,
     force: bool = False,
+    allow_unverified: bool = False,
     protected_dir: str | Path | None = None,
     source_url: str = DEFAULT_SOURCE_URL,
 ) -> UpdateResult:
     """Install or update the A-share dataset (default `~/.qlib/qlib_data/cn_data`).
 
     Raises `qlib_sync.UpdateError` when the update cannot complete; the existing
-    dataset is left unchanged in that case.
+    dataset is left unchanged in that case. Releases are verified with the dataset
+    maintainers' validator; `allow_unverified=True` installs when that is impossible,
+    and the result's `verified` field says which happened.
     """
     options = UpdateOptions(
         data_dir=_resolve(data_dir, market.DEFAULT_DATA_DIR),
@@ -41,6 +44,7 @@ def update_cn(
         protected=list(protect),
         keep_backup=keep_backup,
         force=force,
+        allow_unverified=allow_unverified,
     )
     return run_update(options)
 

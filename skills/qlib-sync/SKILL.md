@@ -6,10 +6,11 @@ description: Install, update, check, and read the local Qlib China A-share daily
 # qlib-sync
 
 qlib-sync keeps `~/.qlib/qlib_data/cn_data` (Qlib's default A-share location) in step with the
-daily community release from chenditc/investment_data. Every update is transactional: the new
-package is verified (sha256 from the release manifest) and validated in a staging directory,
-swapped in, and checked with a real Qlib read. On any failure the previous data is restored,
-so running an update is always safe.
+daily community release from chenditc/investment_data. Every update is transactional: the
+release is pinned by tag, checked with the dataset maintainers' own `validate_archive.py
+--require-publishable` (an unmodified copy ships with qlib-sync), staged, swapped in, and checked
+with a real Qlib read. A release that cannot be verified is refused, and on any failure the
+previous data is restored, so running an update is always safe.
 
 ## Pick the interface
 
@@ -37,8 +38,9 @@ Read the `[ERROR]` line. The existing data is unchanged in every failure case.
 | Message contains | Meaning | What to do |
 |---|---|---|
 | `could not download` | Network problem reaching GitHub | Retry with a mirror: `qlib-sync cn update --mirror https://ghfast.top` (or set `QLIB_SYNC_MIRROR`). Common in mainland China. |
-| `sha256 does not match` | Corrupt or tampered download; it was discarded | Run the update again. If it repeats, the release itself may be broken; wait for the next one. |
-| `manifest says` | Package contents disagree with the release metadata | Upstream problem. Wait and retry later; do not use `--force`. |
+| `refusing to install unverified data` | The release manifest could not be read or was rejected | Usually a network problem: retry, or add `--mirror`. If the message names `invalid-manifest`, upstream published something its own validator rejects; wait for the next release. |
+| `upstream validator (archive-identity-mismatch)` | Corrupt or tampered download; it was discarded | Run the update again. If it repeats, the release itself may be broken; wait for the next one. |
+| `upstream validator (` any other reason | The package fails the maintainers' own checks | Upstream problem. Wait and retry later; do not use `--force` or `--allow-unverified`. |
 | `refusing downgrade` | The release is older than the local data | Nothing to do; local data is newer. |
 | `already running` | Another update holds the lock | Wait for it. If none is running (a crash left the lock), remove `~/.qlib/qlib_data/.cn_data_update.lock` after confirming with the user. |
 | `not a Qlib daily dataset` | The target folder has other content | Ask the user; never delete it yourself. Use `--data-dir` to install elsewhere. |
@@ -50,6 +52,8 @@ After any repair, run `qlib-sync cn health-check`; it ends with `passed` or list
 - The update replaces the whole `cn_data` folder. Files the user added there are lost unless
   passed with `--protect FILE` (custom stock pools in `instruments/`). Mention this before the
   first update if they have customized the folder.
+- Only suggest `--allow-unverified` if the user explicitly accepts installing data nobody has
+  checked; it never bypasses a checksum mismatch, and the result is marked unverified.
 - `--keep-backup` keeps the previous dataset for one rollback; `qlib-sync cn restore --list`
   shows backups and `restore --yes` switches back. Restoring replaces the active data, so
   confirm with the user first.

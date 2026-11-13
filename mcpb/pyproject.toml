@@ -1,6 +1,6 @@
 [project]
 name = "qlib-sync-mcpb"
-version = "0.1.1"
+version = "0.2.0"
 description = "Claude Desktop bundle for qlib-sync"
 requires-python = ">=3.10,<3.13"
-dependencies = ["qlib-sync==0.1.1"]
+dependencies = ["qlib-sync==0.2.0"]
