@@ -30,7 +30,7 @@ any time; when the data is already current it finishes in about a second.
 
 ## Why not just `wget` and `tar`?
 
-<img src="docs/assets/comic.jpg" width="560" alt="Four-panel comic: a download dies at 99% at night; the next day 550 MB arrive and nothing changed; the qlib-sync robot checks the data and stamps it verified, keeping the old copy safe; the researcher sips tea and asks an AI for Moutai's recent closes">
+<img src="docs/assets/comic-en.jpg" width="560" alt="Four-panel comic: a download dies at 99% at night; the next day 550 MB arrive and nothing changed; the qlib-sync robot checks the data and stamps it verified, keeping the old copy safe; the researcher sips tea and asks an AI for Moutai's recent closes">
 
 Qlib's README points A-share users to the community release with a `wget` and `tar` one-liner.
 That works until it doesn't:
